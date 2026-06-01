@@ -1,0 +1,26 @@
+<h2>어떤 플랫폼으로 만들고 싶으세요?</h2>
+<p class="subtitle">실행 환경과 배포 방식이 전체 기술 스택을 결정합니다</p>
+
+<div class="options">
+  <div class="option" data-choice="web" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>웹 앱 (브라우저)</h3>
+      <p>React/Vue 등으로 구현. 설치 없이 URL로 접근. 협업·공유 기능 붙이기 쉬움.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="desktop" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>데스크탑 앱 (Electron/Tauri)</h3>
+      <p>XMind처럼 설치형. 로컬 파일 저장·오프라인 완전 지원. Windows/Mac/Linux 동시 배포 가능.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="both" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>웹 우선 + 나중에 데스크탑</h3>
+      <p>웹으로 먼저 만들고 Electron으로 래핑. 현실적인 단계적 접근.</p>
+    </div>
+  </div>
+</div>
