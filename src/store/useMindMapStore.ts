@@ -1,0 +1,291 @@
+import { create } from 'zustand';
+import { temporal } from 'zundo';
+import { applyNodeChanges, applyEdgeChanges, type NodeChange, type EdgeChange } from '@xyflow/react';
+import type { MindNode, MindMapData, MindMapNode, MindMapEdge } from '../types';
+import { applyDagreLayout } from '../utils/layout';
+import { nanoid } from 'nanoid';
+
+// ─── 초기 데이터 ──────────────────────────────────────────────
+const ROOT_ID = 'root';
+const CHILD_ID = 'child-1';
+
+const initialMindMapData: MindMapData = {
+  id: 'default',
+  title: '새 마인드맵',
+  rootId: ROOT_ID,
+  children: {
+    [ROOT_ID]: [CHILD_ID],
+    [CHILD_ID]: [],
+  },
+  nodes: {
+    [ROOT_ID]: { id: ROOT_ID, type: 'text', label: '중심 주제', note: '', collapsed: false },
+    [CHILD_ID]: { id: CHILD_ID, type: 'text', label: '키워드 1', note: '', collapsed: false },
+  },
+};
+
+// ─── 헬퍼 함수 ────────────────────────────────────────────────
+function getNodeDepth(nodeId: string, children: Record<string, string[]>, rootId: string): number {
+  const queue: { id: string; depth: number }[] = [{ id: rootId, depth: 0 }];
+  while (queue.length > 0) {
+    const { id, depth } = queue.shift()!;
+    if (id === nodeId) return depth;
+    for (const childId of children[id] ?? []) {
+      queue.push({ id: childId, depth: depth + 1 });
+    }
+  }
+  return 0;
+}
+
+function getHiddenIds(
+  rootId: string,
+  children: Record<string, string[]>,
+  nodes: Record<string, MindNode>
+): Set<string> {
+  const hidden = new Set<string>();
+  function traverse(id: string) {
+    for (const childId of children[id] ?? []) {
+      hidden.add(childId);
+      traverse(childId);
+    }
+  }
+  function check(id: string) {
+    if (nodes[id]?.collapsed) {
+      traverse(id);
+    } else {
+      for (const childId of children[id] ?? []) {
+        check(childId);
+      }
+    }
+  }
+  check(rootId);
+  return hidden;
+}
+
+function buildReactFlow(
+  mindMapData: MindMapData,
+  positions: Record<string, { x: number; y: number }>
+): { rfNodes: MindMapNode[]; rfEdges: MindMapEdge[] } {
+  const { nodes, children, rootId } = mindMapData;
+  const hiddenIds = getHiddenIds(rootId, children, nodes);
+
+  const rfNodes: MindMapNode[] = Object.values(nodes).map((node) => ({
+    id: node.id,
+    type: node.type === 'table' ? 'tableNode' : 'textNode',
+    position: positions[node.id] ?? { x: 0, y: 0 },
+    data: node,
+    hidden: hiddenIds.has(node.id),
+  }));
+
+  const rfEdges: MindMapEdge[] = [];
+  for (const [parentId, childIds] of Object.entries(children)) {
+    for (const childId of childIds) {
+      const depth = getNodeDepth(parentId, children, rootId);
+      rfEdges.push({
+        id: `${parentId}-${childId}`,
+        source: parentId,
+        target: childId,
+        type: 'bezierEdge',
+        data: { depth },
+        hidden: hiddenIds.has(childId),
+      });
+    }
+  }
+
+  return { rfNodes, rfEdges };
+}
+
+// ─── 스토어 타입 ──────────────────────────────────────────────
+interface MindMapStoreState {
+  mindMapData: MindMapData;
+  rfNodes: MindMapNode[];
+  rfEdges: MindMapEdge[];
+  positions: Record<string, { x: number; y: number }>;
+  selectedNodeId: string | null;
+  isNoteDrawerOpen: boolean;
+  noteDrawerWidth: number;
+}
+
+interface MindMapStoreActions {
+  addChildNode: (parentId: string, type?: 'text' | 'table') => void;
+  updateNodeLabel: (id: string, label: string) => void;
+  deleteNode: (id: string) => void;
+  toggleCollapse: (id: string) => void;
+  updateNodeNote: (id: string, note: string) => void;
+  updateNodeTableData: (id: string, tableData: NonNullable<MindNode['tableData']>) => void;
+  setSelectedNodeId: (id: string | null) => void;
+  openNoteDrawer: (nodeId: string) => void;
+  closeNoteDrawer: () => void;
+  setNoteDrawerWidth: (width: number) => void;
+  onRfNodesChange: (changes: NodeChange[]) => void;
+  onRfEdgesChange: (changes: EdgeChange[]) => void;
+  applyLayout: () => void;
+  loadFromPersisted: (mindMapData: MindMapData, positions: Record<string, { x: number; y: number }>) => void;
+}
+
+type MindMapStore = MindMapStoreState & MindMapStoreActions;
+
+const { rfNodes: initialRfNodes, rfEdges: initialRfEdges } = buildReactFlow(initialMindMapData, {});
+
+// ─── 스토어 ───────────────────────────────────────────────────
+export const useMindMapStore = create<MindMapStore>()(
+  temporal(
+    (set, get) => ({
+      mindMapData: initialMindMapData,
+      rfNodes: initialRfNodes,
+      rfEdges: initialRfEdges,
+      positions: {},
+      selectedNodeId: null,
+      isNoteDrawerOpen: false,
+      noteDrawerWidth: 360,
+
+      addChildNode: (parentId, type = 'text') => {
+        const { mindMapData, positions } = get();
+        const newId = nanoid(8);
+        const newNode: MindNode = { id: newId, type, label: '새 노드', note: '', collapsed: false };
+        const newData: MindMapData = {
+          ...mindMapData,
+          nodes: { ...mindMapData.nodes, [newId]: newNode },
+          children: {
+            ...mindMapData.children,
+            [parentId]: [...(mindMapData.children[parentId] ?? []), newId],
+            [newId]: [],
+          },
+        };
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        const laidOut = applyDagreLayout(rfNodes, rfEdges);
+        const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
+        set({ mindMapData: newData, rfNodes: laidOut, rfEdges, positions: newPositions });
+      },
+
+      updateNodeLabel: (id, label) => {
+        const { mindMapData, positions } = get();
+        const newData = {
+          ...mindMapData,
+          nodes: { ...mindMapData.nodes, [id]: { ...mindMapData.nodes[id], label } },
+        };
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        set({ mindMapData: newData, rfNodes, rfEdges });
+      },
+
+      deleteNode: (id) => {
+        const { mindMapData, positions } = get();
+        if (id === mindMapData.rootId) return;
+        const toDelete = new Set<string>([id]);
+        const queue = [id];
+        while (queue.length > 0) {
+          const cur = queue.shift()!;
+          for (const childId of mindMapData.children[cur] ?? []) {
+            toDelete.add(childId);
+            queue.push(childId);
+          }
+        }
+        const newNodes = Object.fromEntries(
+          Object.entries(mindMapData.nodes).filter(([k]) => !toDelete.has(k))
+        );
+        const newChildren = Object.fromEntries(
+          Object.entries(mindMapData.children)
+            .filter(([k]) => !toDelete.has(k))
+            .map(([k, v]) => [k, v.filter((c) => !toDelete.has(c))])
+        );
+        const newData = { ...mindMapData, nodes: newNodes, children: newChildren };
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        const laidOut = applyDagreLayout(rfNodes, rfEdges);
+        const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
+        set({
+          mindMapData: newData,
+          rfNodes: laidOut,
+          rfEdges,
+          positions: newPositions,
+          selectedNodeId: null,
+          isNoteDrawerOpen: false,
+        });
+      },
+
+      toggleCollapse: (id) => {
+        const { mindMapData, positions } = get();
+        const node = mindMapData.nodes[id];
+        if (!node) return;
+        const newData = {
+          ...mindMapData,
+          nodes: { ...mindMapData.nodes, [id]: { ...node, collapsed: !node.collapsed } },
+        };
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        set({ mindMapData: newData, rfNodes, rfEdges });
+      },
+
+      updateNodeNote: (id, note) => {
+        const { mindMapData, positions } = get();
+        const newData = {
+          ...mindMapData,
+          nodes: { ...mindMapData.nodes, [id]: { ...mindMapData.nodes[id], note } },
+        };
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        set({ mindMapData: newData, rfNodes, rfEdges });
+      },
+
+      updateNodeTableData: (id, tableData) => {
+        const { mindMapData, positions } = get();
+        const newData = {
+          ...mindMapData,
+          nodes: { ...mindMapData.nodes, [id]: { ...mindMapData.nodes[id], tableData } },
+        };
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        set({ mindMapData: newData, rfNodes, rfEdges });
+      },
+
+      setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+
+      openNoteDrawer: (nodeId) => set({ selectedNodeId: nodeId, isNoteDrawerOpen: true }),
+
+      closeNoteDrawer: () => set({ isNoteDrawerOpen: false }),
+
+      setNoteDrawerWidth: (width) => {
+        const clamped = Math.max(280, Math.min(width, window.innerWidth * 0.75));
+        localStorage.setItem('note-panel-width', String(clamped));
+        set({ noteDrawerWidth: clamped });
+      },
+
+      onRfNodesChange: (changes) => {
+        set((state) => {
+          const updated = applyNodeChanges(changes, state.rfNodes) as MindMapNode[];
+          const newPositions = Object.fromEntries(updated.map((n) => [n.id, n.position]));
+          return { rfNodes: updated, positions: { ...state.positions, ...newPositions } };
+        });
+      },
+
+      onRfEdgesChange: (changes) => {
+        set((state) => ({
+          rfEdges: applyEdgeChanges(changes, state.rfEdges) as MindMapEdge[],
+        }));
+      },
+
+      applyLayout: () => {
+        const { rfNodes, rfEdges } = get();
+        const laidOut = applyDagreLayout(rfNodes, rfEdges);
+        const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
+        set({ rfNodes: laidOut, positions: newPositions });
+      },
+
+      loadFromPersisted: (mindMapData, positions) => {
+        const { rfNodes, rfEdges } = buildReactFlow(mindMapData, positions);
+        set({ mindMapData, rfNodes, rfEdges, positions });
+      },
+    }),
+    {
+      partialize: (state) => ({
+        mindMapData: state.mindMapData,
+        positions: state.positions,
+      }),
+    }
+  )
+);
+
+export const useUndoRedo = () => {
+  const { undo, redo, pastStates, futureStates } = useMindMapStore.temporal.getState();
+  return {
+    undo,
+    redo,
+    canUndo: pastStates.length > 0,
+    canRedo: futureStates.length > 0,
+  };
+};
