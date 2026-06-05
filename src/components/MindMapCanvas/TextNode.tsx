@@ -3,7 +3,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { MindMapNode } from '../../types';
 import { useMindMapStore } from '../../store/useMindMapStore';
 
-export const TextNode = memo(function TextNode({ data, id }: NodeProps<MindMapNode>) {
+export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps<MindMapNode>) {
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(data.label);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -33,7 +33,9 @@ export const TextNode = memo(function TextNode({ data, id }: NodeProps<MindMapNo
 
   return (
     <div
-      className="relative group flex items-center gap-1 px-3 py-2 rounded-lg border text-sm font-medium select-none"
+      className={`relative group flex items-center gap-1 px-3 py-2 rounded-lg border text-sm font-medium select-none ${
+        selected ? 'ring-2 ring-indigo-400 ring-offset-1 ring-offset-slate-950' : ''
+      }`}
       style={{
         background: data.style?.color ?? '#1e293b',
         borderColor: data.style?.color ? data.style.color + '80' : '#334155',

@@ -3,7 +3,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { MindMapNode } from '../../types';
 import { useMindMapStore } from '../../store/useMindMapStore';
 
-export const TableNode = memo(function TableNode({ data, id }: NodeProps<MindMapNode>) {
+export const TableNode = memo(function TableNode({ data, id, selected }: NodeProps<MindMapNode>) {
   const { updateNodeTableData, openNoteDrawer, deleteNode } = useMindMapStore();
   const tableData = data.tableData ?? { headers: ['컬럼 1', '컬럼 2'], rows: [['', '']] };
 
@@ -34,7 +34,11 @@ export const TableNode = memo(function TableNode({ data, id }: NodeProps<MindMap
   };
 
   return (
-    <div className="group relative bg-slate-800 border border-slate-600 rounded-lg p-2 min-w-[200px]">
+    <div
+      className={`group relative bg-slate-800 border border-slate-600 rounded-lg p-2 min-w-[200px] ${
+        selected ? 'ring-2 ring-indigo-400 ring-offset-1 ring-offset-slate-950' : ''
+      }`}
+    >
       <Handle type="target" position={Position.Left} className="!opacity-0" />
 
       <div className="flex items-center justify-between mb-2">

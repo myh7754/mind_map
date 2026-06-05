@@ -109,6 +109,7 @@ interface MindMapStoreActions {
   addChildNode: (parentId: string, type?: 'text' | 'table') => void;
   updateNodeLabel: (id: string, label: string) => void;
   deleteNode: (id: string) => void;
+  deleteNodes: (ids: string[]) => void;
   toggleCollapse: (id: string) => void;
   updateNodeNote: (id: string, note: string) => void;
   updateNodeTableData: (id: string, tableData: NonNullable<MindNode['tableData']>) => void;
@@ -120,6 +121,7 @@ interface MindMapStoreActions {
   onRfEdgesChange: (changes: EdgeChange[]) => void;
   applyLayout: () => void;
   loadFromPersisted: (mindMapData: MindMapData, positions: Record<string, { x: number; y: number }>) => void;
+  syncRfFromData: () => void;
 }
 
 type MindMapStore = MindMapStoreState & MindMapStoreActions;
@@ -168,18 +170,25 @@ export const useMindMapStore = create<MindMapStore>()(
         set({ mindMapData: newData, rfNodes, rfEdges });
       },
 
-      deleteNode: (id) => {
+      deleteNode: (id) => get().deleteNodes([id]),
+
+      deleteNodes: (ids) => {
         const { mindMapData, positions } = get();
-        if (id === mindMapData.rootId) return;
-        const toDelete = new Set<string>([id]);
-        const queue = [id];
-        while (queue.length > 0) {
-          const cur = queue.shift()!;
-          for (const childId of mindMapData.children[cur] ?? []) {
-            toDelete.add(childId);
-            queue.push(childId);
+        // 삭제 대상 + 모든 후손 수집 (루트는 제외)
+        const toDelete = new Set<string>();
+        for (const id of ids) {
+          if (id === mindMapData.rootId) continue;
+          if (toDelete.has(id)) continue;
+          const queue = [id];
+          while (queue.length > 0) {
+            const cur = queue.shift()!;
+            toDelete.add(cur);
+            for (const childId of mindMapData.children[cur] ?? []) {
+              if (!toDelete.has(childId)) queue.push(childId);
+            }
           }
         }
+        if (toDelete.size === 0) return;
         const newNodes = Object.fromEntries(
           Object.entries(mindMapData.nodes).filter(([k]) => !toDelete.has(k))
         );
@@ -247,11 +256,12 @@ export const useMindMapStore = create<MindMapStore>()(
       },
 
       onRfNodesChange: (changes) => {
-        set((state) => {
-          const updated = applyNodeChanges(changes, state.rfNodes) as MindMapNode[];
-          const newPositions = Object.fromEntries(updated.map((n) => [n.id, n.position]));
-          return { rfNodes: updated, positions: { ...state.positions, ...newPositions } };
-        });
+        // 노드 드래그가 비활성(nodesDraggable=false)이라 위치는 안 바뀐다.
+        // 선택/치수 변경 등 시각 상태만 rfNodes에 반영하고, positions는 건드리지 않는다.
+        // (positions를 매번 새로 만들면 undo 히스토리에 노이즈가 쌓인다)
+        set((state) => ({
+          rfNodes: applyNodeChanges(changes, state.rfNodes) as MindMapNode[],
+        }));
       },
 
       onRfEdgesChange: (changes) => {
@@ -271,12 +281,24 @@ export const useMindMapStore = create<MindMapStore>()(
         const { rfNodes, rfEdges } = buildReactFlow(mindMapData, positions);
         set({ mindMapData, rfNodes, rfEdges, positions });
       },
+
+      // undo/redo는 mindMapData/positions만 복원하므로, 파생 상태인
+      // rfNodes/rfEdges를 다시 만들어줘야 캔버스에 반영된다.
+      syncRfFromData: () => {
+        const { mindMapData, positions } = get();
+        const { rfNodes, rfEdges } = buildReactFlow(mindMapData, positions);
+        set({ rfNodes, rfEdges });
+      },
     }),
     {
       partialize: (state) => ({
         mindMapData: state.mindMapData,
         positions: state.positions,
       }),
+      // mindMapData/positions 참조가 실제로 바뀐 set만 히스토리에 기록한다.
+      // (선택·노트열기 등 데이터와 무관한 set은 기록하지 않음)
+      equality: (a, b) =>
+        a.mindMapData === b.mindMapData && a.positions === b.positions,
     }
   )
 );
@@ -284,8 +306,15 @@ export const useMindMapStore = create<MindMapStore>()(
 export const useUndoRedo = () => {
   const { undo, redo, pastStates, futureStates } = useMindMapStore.temporal.getState();
   return {
-    undo,
-    redo,
+    // undo/redo 직후 파생 상태(rfNodes/rfEdges)를 재생성해 캔버스에 반영
+    undo: () => {
+      undo();
+      useMindMapStore.getState().syncRfFromData();
+    },
+    redo: () => {
+      redo();
+      useMindMapStore.getState().syncRfFromData();
+    },
     canUndo: pastStates.length > 0,
     canRedo: futureStates.length > 0,
   };
