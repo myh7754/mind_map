@@ -2,3 +2,8 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; padding: 0; }
+
+/* 드래그 재배치 중 끄는 노드는 반투명 (정렬된 슬롯이 실제 자리를 보여줌) */
+.react-flow__node.rf-dragging {
+  opacity: 0.4;
+}

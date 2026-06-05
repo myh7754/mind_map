@@ -61,6 +61,26 @@ function getHiddenIds(
   return hidden;
 }
 
+// nodeId의 후손(자기 자신 포함) 집합. 순환 방지 검증에 사용.
+function collectSubtree(nodeId: string, children: Record<string, string[]>): Set<string> {
+  const set = new Set<string>();
+  const queue = [nodeId];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    set.add(cur);
+    for (const c of children[cur] ?? []) queue.push(c);
+  }
+  return set;
+}
+
+// nodeId의 현재 부모를 찾는다. 없으면 null(루트).
+function findParent(nodeId: string, children: Record<string, string[]>): string | null {
+  for (const [parentId, kids] of Object.entries(children)) {
+    if (kids.includes(nodeId)) return parentId;
+  }
+  return null;
+}
+
 function buildReactFlow(
   mindMapData: MindMapData,
   positions: Record<string, { x: number; y: number }>
@@ -68,7 +88,23 @@ function buildReactFlow(
   const { nodes, children, rootId } = mindMapData;
   const hiddenIds = getHiddenIds(rootId, children, nodes);
 
-  const rfNodes: MindMapNode[] = Object.values(nodes).map((node) => ({
+  // 노드를 트리 DFS(=children 배열) 순서로 나열한다.
+  // dagre는 노드를 추가한 순서로 같은 rank의 세로 순서를 정하므로,
+  // 이렇게 해야 형제 순서(children 배열 순서)가 화면 위→아래와 일치한다.
+  const orderedNodes: MindNode[] = [];
+  const seen = new Set<string>();
+  const visit = (id: string) => {
+    const n = nodes[id];
+    if (!n || seen.has(id)) return;
+    seen.add(id);
+    orderedNodes.push(n);
+    for (const childId of children[id] ?? []) visit(childId);
+  };
+  visit(rootId);
+  // 트리에 안 걸린 고아 노드도 빠짐없이 포함 (안전망)
+  for (const n of Object.values(nodes)) if (!seen.has(n.id)) orderedNodes.push(n);
+
+  const rfNodes: MindMapNode[] = orderedNodes.map((node) => ({
     id: node.id,
     type: node.type === 'table' ? 'tableNode' : 'textNode',
     position: positions[node.id] ?? { x: 0, y: 0 },
@@ -110,6 +146,8 @@ interface MindMapStoreActions {
   updateNodeLabel: (id: string, label: string) => void;
   deleteNode: (id: string) => void;
   deleteNodes: (ids: string[]) => void;
+  reparentNode: (nodeId: string, newParentId: string) => void;
+  moveNode: (nodeId: string, newParentId: string, index: number) => void;
   toggleCollapse: (id: string) => void;
   updateNodeNote: (id: string, note: string) => void;
   updateNodeTableData: (id: string, tableData: NonNullable<MindNode['tableData']>) => void;
@@ -168,6 +206,54 @@ export const useMindMapStore = create<MindMapStore>()(
         };
         const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
         set({ mindMapData: newData, rfNodes, rfEdges });
+      },
+
+      // 끝에 붙이는 단순 재배치 (moveNode의 append 형태)
+      reparentNode: (nodeId, newParentId) =>
+        get().moveNode(nodeId, newParentId, Number.MAX_SAFE_INTEGER),
+
+      // nodeId를 newParentId의 children 중 index 위치로 이동.
+      // 같은 부모 안에서도 동작하므로 형제 순서 변경(reorder)에 쓰인다.
+      moveNode: (nodeId, newParentId, index) => {
+        const { mindMapData, positions } = get();
+        const { rootId, children } = mindMapData;
+
+        // 검증: 루트는 이동 불가 / 자기 자신에 붙일 수 없음
+        if (nodeId === rootId || nodeId === newParentId) return;
+        // 검증: 새 부모가 노드 자신의 후손이면 순환이 생기므로 금지
+        const subtree = collectSubtree(nodeId, children);
+        if (subtree.has(newParentId)) return;
+
+        const currentParent = findParent(nodeId, children);
+
+        const newChildren: Record<string, string[]> = { ...children };
+        // 기존 부모에서 제거
+        if (currentParent) {
+          newChildren[currentParent] = (newChildren[currentParent] ?? []).filter(
+            (c) => c !== nodeId
+          );
+        }
+        // 새 부모 배열에서도 (혹시 모를 중복 대비) 제거 후 index 위치에 삽입
+        const target = (newChildren[newParentId] ?? []).filter((c) => c !== nodeId);
+        const clamped = Math.max(0, Math.min(index, target.length));
+        target.splice(clamped, 0, nodeId);
+        newChildren[newParentId] = target;
+
+        // 변화 없음(같은 부모 + 같은 순서)이면 히스토리 노이즈 방지를 위해 종료
+        const prev = children[newParentId] ?? [];
+        if (
+          currentParent === newParentId &&
+          prev.length === target.length &&
+          prev.every((id, i) => id === target[i])
+        ) {
+          return;
+        }
+
+        const newData = { ...mindMapData, children: newChildren };
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        const laidOut = applyDagreLayout(rfNodes, rfEdges);
+        const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
+        set({ mindMapData: newData, rfNodes: laidOut, rfEdges, positions: newPositions });
       },
 
       deleteNode: (id) => get().deleteNodes([id]),

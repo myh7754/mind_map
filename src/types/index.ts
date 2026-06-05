@@ -29,4 +29,4 @@ export interface PersistedState {
 }
 
 export type MindMapNode = Node<MindNode>;
-export type MindMapEdge = Edge<{ depth: number }>;
+export type MindMapEdge = Edge<{ depth: number; preview?: boolean }>;
