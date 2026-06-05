@@ -15,9 +15,8 @@ const Y_STEP = NODE_HEIGHT + NODE_SEP;
  * 마인드맵은 항상 트리이므로, 여기서는 children(=edge) 순서를 그대로 위→아래로
  * 배치하는 단순 tidy-tree 레이아웃을 직접 구현해 순서를 보장한다.
  *
- * (export 이름은 기존 호출부 호환을 위해 유지)
  */
-export function applyDagreLayout(
+export function applyTreeLayout(
   nodes: MindMapNode[],
   edges: MindMapEdge[]
 ): MindMapNode[] {

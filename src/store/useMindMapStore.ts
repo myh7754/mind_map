@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { temporal } from 'zundo';
 import { applyNodeChanges, applyEdgeChanges, type NodeChange, type EdgeChange } from '@xyflow/react';
 import type { MindNode, MindMapData, MindMapNode, MindMapEdge } from '../types';
-import { applyDagreLayout } from '../utils/layout';
+import { applyTreeLayout } from '../utils/layout';
 import { nanoid } from 'nanoid';
 
 // ─── 초기 데이터 ──────────────────────────────────────────────
@@ -88,23 +88,9 @@ function buildReactFlow(
   const { nodes, children, rootId } = mindMapData;
   const hiddenIds = getHiddenIds(rootId, children, nodes);
 
-  // 노드를 트리 DFS(=children 배열) 순서로 나열한다.
-  // dagre는 노드를 추가한 순서로 같은 rank의 세로 순서를 정하므로,
-  // 이렇게 해야 형제 순서(children 배열 순서)가 화면 위→아래와 일치한다.
-  const orderedNodes: MindNode[] = [];
-  const seen = new Set<string>();
-  const visit = (id: string) => {
-    const n = nodes[id];
-    if (!n || seen.has(id)) return;
-    seen.add(id);
-    orderedNodes.push(n);
-    for (const childId of children[id] ?? []) visit(childId);
-  };
-  visit(rootId);
-  // 트리에 안 걸린 고아 노드도 빠짐없이 포함 (안전망)
-  for (const n of Object.values(nodes)) if (!seen.has(n.id)) orderedNodes.push(n);
-
-  const rfNodes: MindMapNode[] = orderedNodes.map((node) => ({
+  // 형제 세로 순서는 레이아웃(applyTreeLayout)이 edge 순서로 결정하므로
+  // 여기서 노드 나열 순서는 중요하지 않다.
+  const rfNodes: MindMapNode[] = Object.values(nodes).map((node) => ({
     id: node.id,
     type: node.type === 'table' ? 'tableNode' : 'textNode',
     position: positions[node.id] ?? { x: 0, y: 0 },
@@ -165,7 +151,7 @@ interface MindMapStoreActions {
 type MindMapStore = MindMapStoreState & MindMapStoreActions;
 
 const { rfNodes: _initNodes, rfEdges: initialRfEdges } = buildReactFlow(initialMindMapData, {});
-const initialRfNodes = applyDagreLayout(_initNodes, initialRfEdges);
+const initialRfNodes = applyTreeLayout(_initNodes, initialRfEdges);
 
 // ─── 스토어 ───────────────────────────────────────────────────
 export const useMindMapStore = create<MindMapStore>()(
@@ -193,7 +179,7 @@ export const useMindMapStore = create<MindMapStore>()(
           },
         };
         const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
-        const laidOut = applyDagreLayout(rfNodes, rfEdges);
+        const laidOut = applyTreeLayout(rfNodes, rfEdges);
         const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
         set({ mindMapData: newData, rfNodes: laidOut, rfEdges, positions: newPositions });
       },
@@ -251,7 +237,7 @@ export const useMindMapStore = create<MindMapStore>()(
 
         const newData = { ...mindMapData, children: newChildren };
         const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
-        const laidOut = applyDagreLayout(rfNodes, rfEdges);
+        const laidOut = applyTreeLayout(rfNodes, rfEdges);
         const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
         set({ mindMapData: newData, rfNodes: laidOut, rfEdges, positions: newPositions });
       },
@@ -285,7 +271,7 @@ export const useMindMapStore = create<MindMapStore>()(
         );
         const newData = { ...mindMapData, nodes: newNodes, children: newChildren };
         const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
-        const laidOut = applyDagreLayout(rfNodes, rfEdges);
+        const laidOut = applyTreeLayout(rfNodes, rfEdges);
         const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
         set({
           mindMapData: newData,
@@ -358,7 +344,7 @@ export const useMindMapStore = create<MindMapStore>()(
 
       applyLayout: () => {
         const { rfNodes, rfEdges } = get();
-        const laidOut = applyDagreLayout(rfNodes, rfEdges);
+        const laidOut = applyTreeLayout(rfNodes, rfEdges);
         const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
         set({ rfNodes: laidOut, positions: newPositions });
       },
