@@ -124,7 +124,8 @@ interface MindMapStoreActions {
 
 type MindMapStore = MindMapStoreState & MindMapStoreActions;
 
-const { rfNodes: initialRfNodes, rfEdges: initialRfEdges } = buildReactFlow(initialMindMapData, {});
+const { rfNodes: _initNodes, rfEdges: initialRfEdges } = buildReactFlow(initialMindMapData, {});
+const initialRfNodes = applyDagreLayout(_initNodes, initialRfEdges);
 
 // ─── 스토어 ───────────────────────────────────────────────────
 export const useMindMapStore = create<MindMapStore>()(
