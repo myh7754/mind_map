@@ -48,25 +48,51 @@ export default function App() {
     };
   }, [mindMapData, positions]);
 
-  // Ctrl+Z / Ctrl+Y 전역 단축키
+  // 전역 단축키: Ctrl+Z/Y(되돌리기) + XMind식 노드 편집(Tab/Enter/F2/Escape)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
       const target = e.target as HTMLElement;
-      // 입력 필드 / 노트 에디터(contentEditable) 안에서는 자체 undo에 맡긴다
-      if (
+      // 입력 필드 / 노트 에디터(contentEditable) 안에서는 단축키를 가로채지 않는다
+      const inField =
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
-        target.isContentEditable
-      ) {
+        target.isContentEditable;
+
+      // ── Ctrl/Meta 조합: 되돌리기/다시실행 ──
+      if (e.ctrlKey || e.metaKey) {
+        if (inField) return; // 입력 중에는 자체 undo에 맡긴다
+        if (e.key === 'z') {
+          e.preventDefault();
+          undo();
+        } else if (e.key === 'y') {
+          e.preventDefault();
+          redo();
+        }
         return;
       }
-      if (e.key === 'z') {
+
+      if (inField) return; // 라벨/노트 편집 중에는 노드 단축키 무시
+
+      const store = useMindMapStore.getState();
+      const sel = store.selectedNodeId;
+
+      // Tab = 자식 추가, Enter = 형제 추가 (둘 다 만든 뒤 곧바로 편집 모드)
+      if (e.key === 'Tab') {
+        e.preventDefault(); // 기본 포커스 이동 방지
+        if (!sel) return;
+        const newId = store.addChildNode(sel);
+        store.setEditingNodeId(newId);
+      } else if (e.key === 'Enter') {
         e.preventDefault();
-        undo();
-      } else if (e.key === 'y') {
+        if (!sel) return;
+        const newId = store.addSiblingNode(sel);
+        if (newId) store.setEditingNodeId(newId);
+      } else if (e.key === 'F2') {
         e.preventDefault();
-        redo();
+        // 표 노드는 인라인 라벨 입력이 없으므로 텍스트 노드만 편집 모드로
+        if (sel && store.mindMapData.nodes[sel]?.type === 'text') store.setEditingNodeId(sel);
+      } else if (e.key === 'Escape') {
+        store.setSelectedNodeId(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);

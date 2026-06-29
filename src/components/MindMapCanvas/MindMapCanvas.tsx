@@ -272,6 +272,9 @@ function Flow() {
       panOnDrag={false}
       /* Delete/Backspace로 선택된 노드 삭제 */
       deleteKeyCode={['Delete', 'Backspace']}
+      /* ReactFlow 내장 키보드 네비(Tab 포커스/화살표 이동)는 끈다.
+         Tab=자식추가, Enter=형제추가 단축키와 충돌하지 않도록. */
+      disableKeyboardA11y
     >
       <ChordPanController />
       {preview && (

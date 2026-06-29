@@ -83,19 +83,23 @@ function findParent(nodeId: string, children: Record<string, string[]>): string 
 
 function buildReactFlow(
   mindMapData: MindMapData,
-  positions: Record<string, { x: number; y: number }>
+  positions: Record<string, { x: number; y: number }>,
+  selectedNodeId: string | null = null
 ): { rfNodes: MindMapNode[]; rfEdges: MindMapEdge[] } {
   const { nodes, children, rootId } = mindMapData;
   const hiddenIds = getHiddenIds(rootId, children, nodes);
 
   // 형제 세로 순서는 레이아웃(applyTreeLayout)이 edge 순서로 결정하므로
   // 여기서 노드 나열 순서는 중요하지 않다.
+  // selected는 항상 selectedNodeId로 재계산한다 → 데이터 변경으로 rfNodes를 다시
+  // 만들어도(이동/편집 등) 선택 링이 유지된다. (단일 선택 단일 출처)
   const rfNodes: MindMapNode[] = Object.values(nodes).map((node) => ({
     id: node.id,
     type: node.type === 'table' ? 'tableNode' : 'textNode',
     position: positions[node.id] ?? { x: 0, y: 0 },
     data: node,
     hidden: hiddenIds.has(node.id),
+    selected: node.id === selectedNodeId,
   }));
 
   const rfEdges: MindMapEdge[] = [];
@@ -123,12 +127,17 @@ interface MindMapStoreState {
   rfEdges: MindMapEdge[];
   positions: Record<string, { x: number; y: number }>;
   selectedNodeId: string | null;
+  // 인라인 라벨 편집 중인 노드. 더블클릭/F2/Tab·Enter로 생성 직후 켜진다.
+  editingNodeId: string | null;
   isNoteDrawerOpen: boolean;
   noteDrawerWidth: number;
 }
 
 interface MindMapStoreActions {
-  addChildNode: (parentId: string, type?: 'text' | 'table') => void;
+  // 자식 노드를 추가하고 새 노드 id를 반환한다. index 생략 시 맨 끝에 붙는다.
+  addChildNode: (parentId: string, type?: 'text' | 'table', index?: number) => string;
+  // nodeId 바로 다음 위치에 형제 노드를 추가한다. 루트면 null.
+  addSiblingNode: (nodeId: string) => string | null;
   updateNodeLabel: (id: string, label: string) => void;
   deleteNode: (id: string) => void;
   deleteNodes: (ids: string[]) => void;
@@ -138,6 +147,7 @@ interface MindMapStoreActions {
   updateNodeNote: (id: string, note: string) => void;
   updateNodeTableData: (id: string, tableData: NonNullable<MindNode['tableData']>) => void;
   setSelectedNodeId: (id: string | null) => void;
+  setEditingNodeId: (id: string | null) => void;
   openNoteDrawer: (nodeId: string) => void;
   closeNoteDrawer: () => void;
   setNoteDrawerWidth: (width: number) => void;
@@ -162,35 +172,54 @@ export const useMindMapStore = create<MindMapStore>()(
       rfEdges: initialRfEdges,
       positions: {},
       selectedNodeId: null,
+      editingNodeId: null,
       isNoteDrawerOpen: false,
       noteDrawerWidth: 360,
 
-      addChildNode: (parentId, type = 'text') => {
+      addChildNode: (parentId, type = 'text', index) => {
         const { mindMapData, positions } = get();
         const newId = nanoid(8);
         const newNode: MindNode = { id: newId, type, label: '새 노드', note: '', collapsed: false };
+        // index 위치에 삽입 (생략 시 맨 끝)
+        const siblings = mindMapData.children[parentId] ?? [];
+        const at = index === undefined ? siblings.length : Math.max(0, Math.min(index, siblings.length));
+        const newSiblings = [...siblings];
+        newSiblings.splice(at, 0, newId);
         const newData: MindMapData = {
           ...mindMapData,
           nodes: { ...mindMapData.nodes, [newId]: newNode },
           children: {
             ...mindMapData.children,
-            [parentId]: [...(mindMapData.children[parentId] ?? []), newId],
+            [parentId]: newSiblings,
             [newId]: [],
           },
         };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        // 새 노드를 곧바로 선택한다 (키보드 흐름: 생성 → 선택 → 편집)
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, newId);
         const laidOut = applyTreeLayout(rfNodes, rfEdges);
         const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
-        set({ mindMapData: newData, rfNodes: laidOut, rfEdges, positions: newPositions });
+        set({ mindMapData: newData, rfNodes: laidOut, rfEdges, positions: newPositions, selectedNodeId: newId });
+        return newId;
+      },
+
+      // 형제 추가 = nodeId의 부모에 nodeId 바로 다음 위치로 자식 추가.
+      addSiblingNode: (nodeId) => {
+        const { mindMapData } = get();
+        if (nodeId === mindMapData.rootId) return null; // 루트는 형제가 없음
+        const parentId = findParent(nodeId, mindMapData.children);
+        if (parentId === null) return null;
+        const siblings = mindMapData.children[parentId] ?? [];
+        const idx = siblings.indexOf(nodeId);
+        return get().addChildNode(parentId, 'text', idx + 1);
       },
 
       updateNodeLabel: (id, label) => {
-        const { mindMapData, positions } = get();
+        const { mindMapData, positions, selectedNodeId } = get();
         const newData = {
           ...mindMapData,
           nodes: { ...mindMapData.nodes, [id]: { ...mindMapData.nodes[id], label } },
         };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, selectedNodeId);
         set({ mindMapData: newData, rfNodes, rfEdges });
       },
 
@@ -201,7 +230,7 @@ export const useMindMapStore = create<MindMapStore>()(
       // nodeId를 newParentId의 children 중 index 위치로 이동.
       // 같은 부모 안에서도 동작하므로 형제 순서 변경(reorder)에 쓰인다.
       moveNode: (nodeId, newParentId, index) => {
-        const { mindMapData, positions } = get();
+        const { mindMapData, positions, selectedNodeId } = get();
         const { rootId, children } = mindMapData;
 
         // 검증: 루트는 이동 불가 / 자기 자신에 붙일 수 없음
@@ -236,7 +265,7 @@ export const useMindMapStore = create<MindMapStore>()(
         }
 
         const newData = { ...mindMapData, children: newChildren };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, selectedNodeId);
         const laidOut = applyTreeLayout(rfNodes, rfEdges);
         const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
         set({ mindMapData: newData, rfNodes: laidOut, rfEdges, positions: newPositions });
@@ -284,38 +313,48 @@ export const useMindMapStore = create<MindMapStore>()(
       },
 
       toggleCollapse: (id) => {
-        const { mindMapData, positions } = get();
+        const { mindMapData, positions, selectedNodeId } = get();
         const node = mindMapData.nodes[id];
         if (!node) return;
         const newData = {
           ...mindMapData,
           nodes: { ...mindMapData.nodes, [id]: { ...node, collapsed: !node.collapsed } },
         };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, selectedNodeId);
         set({ mindMapData: newData, rfNodes, rfEdges });
       },
 
       updateNodeNote: (id, note) => {
-        const { mindMapData, positions } = get();
+        const { mindMapData, positions, selectedNodeId } = get();
         const newData = {
           ...mindMapData,
           nodes: { ...mindMapData.nodes, [id]: { ...mindMapData.nodes[id], note } },
         };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, selectedNodeId);
         set({ mindMapData: newData, rfNodes, rfEdges });
       },
 
       updateNodeTableData: (id, tableData) => {
-        const { mindMapData, positions } = get();
+        const { mindMapData, positions, selectedNodeId } = get();
         const newData = {
           ...mindMapData,
           nodes: { ...mindMapData.nodes, [id]: { ...mindMapData.nodes[id], tableData } },
         };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
+        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, selectedNodeId);
         set({ mindMapData: newData, rfNodes, rfEdges });
       },
 
-      setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+      // 선택 변경 시 rfNodes의 selected 플래그도 갱신 → 링 표시가 store 선택을 따른다.
+      // (키보드로 만든/선택한 노드가 곧바로 강조되고, Delete 대상으로도 잡힌다)
+      setSelectedNodeId: (id) =>
+        set((state) => ({
+          selectedNodeId: id,
+          rfNodes: state.rfNodes.map((n) =>
+            n.selected === (n.id === id) ? n : { ...n, selected: n.id === id }
+          ),
+        })),
+
+      setEditingNodeId: (id) => set({ editingNodeId: id }),
 
       openNoteDrawer: (nodeId) => set({ selectedNodeId: nodeId, isNoteDrawerOpen: true }),
 
@@ -350,15 +389,15 @@ export const useMindMapStore = create<MindMapStore>()(
       },
 
       loadFromPersisted: (mindMapData, positions) => {
-        const { rfNodes, rfEdges } = buildReactFlow(mindMapData, positions);
+        const { rfNodes, rfEdges } = buildReactFlow(mindMapData, positions, get().selectedNodeId);
         set({ mindMapData, rfNodes, rfEdges, positions });
       },
 
       // undo/redo는 mindMapData/positions만 복원하므로, 파생 상태인
       // rfNodes/rfEdges를 다시 만들어줘야 캔버스에 반영된다.
       syncRfFromData: () => {
-        const { mindMapData, positions } = get();
-        const { rfNodes, rfEdges } = buildReactFlow(mindMapData, positions);
+        const { mindMapData, positions, selectedNodeId } = get();
+        const { rfNodes, rfEdges } = buildReactFlow(mindMapData, positions, selectedNodeId);
         set({ rfNodes, rfEdges });
       },
     }),

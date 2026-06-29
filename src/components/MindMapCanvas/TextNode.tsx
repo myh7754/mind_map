@@ -4,12 +4,13 @@ import type { MindMapNode } from '../../types';
 import { useMindMapStore } from '../../store/useMindMapStore';
 
 export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps<MindMapNode>) {
-  const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(data.label);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { updateNodeLabel, toggleCollapse, openNoteDrawer, deleteNode, mindMapData } =
+  const { updateNodeLabel, toggleCollapse, openNoteDrawer, deleteNode, mindMapData, editingNodeId, setEditingNodeId } =
     useMindMapStore();
 
+  // 편집 상태는 스토어가 단일 출처: 더블클릭/F2/Tab·Enter(생성 직후) 모두 여기로 모인다.
+  const editing = editingNodeId === id;
   const hasChildren = (mindMapData.children[id] ?? []).length > 0;
 
   useEffect(() => {
@@ -17,11 +18,15 @@ export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps
   }, [data.label]);
 
   useEffect(() => {
-    if (editing) inputRef.current?.focus();
+    if (editing) {
+      // 새로 만든 '새 노드'는 전체 선택해두면 바로 타이핑으로 덮어쓸 수 있다.
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
   }, [editing]);
 
   const handleBlur = () => {
-    setEditing(false);
+    setEditingNodeId(null);
     if (label !== data.label) updateNodeLabel(id, label);
   };
 
@@ -42,7 +47,7 @@ export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps
         color: '#e2e8f0',
         minWidth: 120,
       }}
-      onDoubleClick={() => setEditing(true)}
+      onDoubleClick={() => setEditingNodeId(id)}
     >
       <Handle type="target" position={Position.Left} className="!opacity-0" />
 
