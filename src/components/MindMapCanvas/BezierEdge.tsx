@@ -6,7 +6,7 @@ const EDGE_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe'];
 export function BezierEdge({
   sourceX, sourceY, targetX, targetY,
   data,
-}: EdgeProps<MindMapEdge['data']>) {
+}: EdgeProps<MindMapEdge>) {
   const depth = data?.depth ?? 0;
   const isPreview = data?.preview ?? false;
   const color = isPreview ? '#f59e0b' : EDGE_COLORS[Math.min(depth, EDGE_COLORS.length - 1)];

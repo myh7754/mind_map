@@ -9,17 +9,6 @@ interface BlockNoteEditorProps {
   onSave: (content: string) => void;
 }
 
-const EMPTY_BLOCK = [{ type: 'paragraph', content: '' }] as const;
-
-function parseNote(note: string) {
-  if (!note) return EMPTY_BLOCK as unknown as Parameters<typeof editor.replaceBlocks>[1];
-  try {
-    return JSON.parse(note);
-  } catch {
-    return EMPTY_BLOCK as unknown as Parameters<typeof editor.replaceBlocks>[1];
-  }
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseNoteBlocks(note: string): any[] {
   if (!note) return [{ type: 'paragraph', content: '' }];

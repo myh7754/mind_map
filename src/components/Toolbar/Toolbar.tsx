@@ -2,9 +2,11 @@ import { useMindMapStore, useUndoRedo } from '../../store/useMindMapStore';
 import { exportToMarkdown } from '../../utils/exportMarkdown';
 import { downloadJson, loadJsonFile } from '../../utils/exportJson';
 import { saveAs } from 'file-saver';
+import { SaveStatus } from './SaveStatus';
+import { MapSwitcher } from './MapSwitcher';
 
 export function Toolbar() {
-  const { mindMapData, selectedNodeId, addChildNode, applyLayout, loadFromPersisted } =
+  const { mindMapData, selectedNodeId, addChildNode, applyLayout, loadFromPersisted, setSearchOpen } =
     useMindMapStore();
   const { undo, redo, canUndo, canRedo } = useUndoRedo();
 
@@ -28,7 +30,9 @@ export function Toolbar() {
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-slate-900 border-b border-slate-700 flex-shrink-0">
-      <span className="text-indigo-400 font-semibold text-sm mr-2">🗺 MindMap</span>
+      <span className="text-indigo-400 font-semibold text-sm">🗺</span>
+      <MapSwitcher />
+      <div className="w-px h-5 bg-slate-700 mx-1" />
 
       <button
         className="px-3 py-1.5 rounded text-xs bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -75,8 +79,23 @@ export function Toolbar() {
       >
         ⟳ 정렬
       </button>
+      <button
+        className="px-2 py-1.5 rounded text-xs bg-slate-700 text-slate-300 hover:bg-slate-600"
+        onClick={() => setSearchOpen(true)}
+        title="노드·노트 검색 (Ctrl+F)"
+      >
+        🔍 검색
+      </button>
 
       <div className="flex-1" />
+
+      <span className="text-[10px] text-slate-600 mr-2 hidden xl:inline">
+        Tab 자식 · Enter 형제 · F2 편집 · ←↑↓→ 이동 · Space 접기
+      </span>
+
+      <SaveStatus />
+
+      <div className="w-px h-5 bg-slate-700 mx-1" />
 
       <button
         className="px-2 py-1.5 rounded text-xs bg-slate-700 text-slate-300 hover:bg-slate-600"

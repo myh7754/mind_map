@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
 import { applyNodeChanges, applyEdgeChanges, type NodeChange, type EdgeChange } from '@xyflow/react';
-import type { MindNode, MindMapData, MindMapNode, MindMapEdge } from '../types';
+import type { MindNode, MindMapData, MindMapNode, MindMapEdge, SaveStatus } from '../types';
 import { applyTreeLayout } from '../utils/layout';
 import { nanoid } from 'nanoid';
 
@@ -23,17 +23,53 @@ const initialMindMapData: MindMapData = {
   },
 };
 
+type Positions = Record<string, { x: number; y: number }>;
+
+/**
+ * 빈 마인드맵 하나를 만든다. 과목별로 맵을 나눠 쓰는 흐름의 시작점.
+ *
+ * id는 nanoid로 뽑는다 — 'default' 같은 슬롯 이름이 아니라 전역 고유값이어야
+ * 나중에 여러 사용자의 맵이 한 저장소에 섞여도 그대로 쓸 수 있다.
+ */
+export function createEmptyMindMap(title: string): MindMapData {
+  const rootId = nanoid(8);
+  return {
+    id: nanoid(10),
+    title,
+    rootId,
+    children: { [rootId]: [] },
+    nodes: {
+      [rootId]: { id: rootId, type: 'text', label: title, note: '', collapsed: false },
+    },
+  };
+}
+
 // ─── 헬퍼 함수 ────────────────────────────────────────────────
-function getNodeDepth(nodeId: string, children: Record<string, string[]>, rootId: string): number {
-  const queue: { id: string; depth: number }[] = [{ id: rootId, depth: 0 }];
-  while (queue.length > 0) {
-    const { id, depth } = queue.shift()!;
-    if (id === nodeId) return depth;
+
+/**
+ * 트리를 한 번만 순회해 depth/parent를 동시에 구한다.
+ * (예전에는 간선마다 루트에서 BFS를 다시 돌려 O(N²)였다)
+ */
+interface TreeIndex {
+  depth: Map<string, number>;
+  parent: Map<string, string>;
+}
+
+function buildTreeIndex(rootId: string, children: Record<string, string[]>): TreeIndex {
+  const depth = new Map<string, number>([[rootId, 0]]);
+  const parent = new Map<string, string>();
+  const stack = [rootId];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    const d = depth.get(id)!;
     for (const childId of children[id] ?? []) {
-      queue.push({ id: childId, depth: depth + 1 });
+      if (depth.has(childId)) continue; // 중복/순환 방어
+      depth.set(childId, d + 1);
+      parent.set(childId, id);
+      stack.push(childId);
     }
   }
-  return 0;
+  return { depth, parent };
 }
 
 function getHiddenIds(
@@ -83,35 +119,47 @@ function findParent(nodeId: string, children: Record<string, string[]>): string 
 
 function buildReactFlow(
   mindMapData: MindMapData,
-  positions: Record<string, { x: number; y: number }>,
-  selectedNodeId: string | null = null
+  positions: Positions,
+  selectedNodeId: string | null = null,
+  prevNodes: MindMapNode[] = []
 ): { rfNodes: MindMapNode[]; rfEdges: MindMapEdge[] } {
   const { nodes, children, rootId } = mindMapData;
   const hiddenIds = getHiddenIds(rootId, children, nodes);
+  const { depth } = buildTreeIndex(rootId, children);
+
+  // 이전 노드의 실측 크기(measured)를 물려받는다. 이걸 안 하면 데이터가 바뀔 때마다
+  // 크기 정보가 날아가서 레이아웃이 매번 폴백 크기로 되돌아간다.
+  const prevById = new Map(prevNodes.map((n) => [n.id, n]));
 
   // 형제 세로 순서는 레이아웃(applyTreeLayout)이 edge 순서로 결정하므로
   // 여기서 노드 나열 순서는 중요하지 않다.
   // selected는 항상 selectedNodeId로 재계산한다 → 데이터 변경으로 rfNodes를 다시
   // 만들어도(이동/편집 등) 선택 링이 유지된다. (단일 선택 단일 출처)
-  const rfNodes: MindMapNode[] = Object.values(nodes).map((node) => ({
-    id: node.id,
-    type: node.type === 'table' ? 'tableNode' : 'textNode',
-    position: positions[node.id] ?? { x: 0, y: 0 },
-    data: node,
-    hidden: hiddenIds.has(node.id),
-    selected: node.id === selectedNodeId,
-  }));
+  const rfNodes: MindMapNode[] = Object.values(nodes).map((node) => {
+    const prev = prevById.get(node.id);
+    const next: MindMapNode = {
+      id: node.id,
+      type: node.type === 'table' ? 'tableNode' : 'textNode',
+      position: positions[node.id] ?? { x: 0, y: 0 },
+      data: node,
+      hidden: hiddenIds.has(node.id),
+      selected: node.id === selectedNodeId,
+    };
+    if (prev?.measured) next.measured = prev.measured;
+    if (prev?.width != null) next.width = prev.width;
+    if (prev?.height != null) next.height = prev.height;
+    return next;
+  });
 
   const rfEdges: MindMapEdge[] = [];
   for (const [parentId, childIds] of Object.entries(children)) {
     for (const childId of childIds) {
-      const depth = getNodeDepth(parentId, children, rootId);
       rfEdges.push({
         id: `${parentId}-${childId}`,
         source: parentId,
         target: childId,
         type: 'bezierEdge',
-        data: { depth },
+        data: { depth: depth.get(parentId) ?? 0 },
         hidden: hiddenIds.has(childId),
       });
     }
@@ -120,17 +168,48 @@ function buildReactFlow(
   return { rfNodes, rfEdges };
 }
 
+/**
+ * 데이터 → 파생 상태(rfNodes/rfEdges/positions) 투영.
+ * relayout=true면 자동 배치까지 수행해 positions를 새로 만든다.
+ */
+function project(
+  mindMapData: MindMapData,
+  positions: Positions,
+  selectedNodeId: string | null,
+  prevNodes: MindMapNode[],
+  relayout: boolean
+): { rfNodes: MindMapNode[]; rfEdges: MindMapEdge[]; positions: Positions } {
+  const { rfNodes, rfEdges } = buildReactFlow(mindMapData, positions, selectedNodeId, prevNodes);
+  if (!relayout) return { rfNodes, rfEdges, positions };
+  const laidOut = applyTreeLayout(rfNodes, rfEdges);
+  const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
+  return { rfNodes: laidOut, rfEdges, positions: newPositions };
+}
+
 // ─── 스토어 타입 ──────────────────────────────────────────────
+export type NavDirection = 'up' | 'down' | 'left' | 'right';
+
 interface MindMapStoreState {
   mindMapData: MindMapData;
   rfNodes: MindMapNode[];
   rfEdges: MindMapEdge[];
-  positions: Record<string, { x: number; y: number }>;
+  positions: Positions;
   selectedNodeId: string | null;
   // 인라인 라벨 편집 중인 노드. 더블클릭/F2/Tab·Enter로 생성 직후 켜진다.
   editingNodeId: string | null;
   isNoteDrawerOpen: boolean;
   noteDrawerWidth: number;
+  // 캔버스를 특정 노드로 이동시켜 달라는 요청. seq는 같은 노드를 연속 요청해도
+  // 값이 바뀌게 해서 useEffect가 매번 발화하도록 하는 토큰이다.
+  // center=true면 무조건 화면 중앙으로, false면 화면 밖일 때만 따라간다.
+  focusRequest: { id: string; seq: number; center: boolean } | null;
+  isSearchOpen: boolean;
+  // 자동 저장 상태. 실패를 조용히 넘기지 않고 화면에 드러내기 위한 것.
+  saveStatus: SaveStatus;
+  saveError: string | null;
+  lastSavedAt: number | null;
+  // 다른 탭이 같은 맵을 저장했을 때 세워지는 깃발. 사용자에게 알리고 선택을 맡긴다.
+  hasExternalChange: boolean;
 }
 
 interface MindMapStoreActions {
@@ -148,14 +227,26 @@ interface MindMapStoreActions {
   updateNodeTableData: (id: string, tableData: NonNullable<MindNode['tableData']>) => void;
   setSelectedNodeId: (id: string | null) => void;
   setEditingNodeId: (id: string | null) => void;
+  // 방향키 탐색: 선택을 부모/첫 자식/이전·다음 형제로 옮긴다.
+  selectRelative: (dir: NavDirection) => void;
+  // 접힌 조상을 모두 펼쳐 해당 노드를 화면에 드러낸다.
+  revealNode: (id: string) => void;
+  focusNode: (id: string, center?: boolean) => void;
+  setSearchOpen: (open: boolean) => void;
+  setSaveStatus: (status: SaveStatus, error?: string | null, savedAt?: number) => void;
+  setExternalChange: (value: boolean) => void;
   openNoteDrawer: (nodeId: string) => void;
   closeNoteDrawer: () => void;
   setNoteDrawerWidth: (width: number) => void;
   onRfNodesChange: (changes: NodeChange[]) => void;
   onRfEdgesChange: (changes: EdgeChange[]) => void;
   applyLayout: () => void;
-  loadFromPersisted: (mindMapData: MindMapData, positions: Record<string, { x: number; y: number }>) => void;
+  loadFromPersisted: (mindMapData: MindMapData, positions: Positions) => void;
   syncRfFromData: () => void;
+  // 맵 제목 변경 (과목 이름). 내보내기 파일명과 맵 목록에 쓰인다.
+  setMapTitle: (title: string) => void;
+  // 다른 맵으로 갈아탄다. undo 히스토리는 맵 경계를 넘지 않아야 하므로 함께 비운다.
+  openMap: (mindMapData: MindMapData, positions: Positions) => void;
 }
 
 type MindMapStore = MindMapStoreState & MindMapStoreActions;
@@ -175,9 +266,15 @@ export const useMindMapStore = create<MindMapStore>()(
       editingNodeId: null,
       isNoteDrawerOpen: false,
       noteDrawerWidth: 360,
+      focusRequest: null,
+      isSearchOpen: false,
+      saveStatus: 'idle',
+      saveError: null,
+      lastSavedAt: null,
+      hasExternalChange: false,
 
       addChildNode: (parentId, type = 'text', index) => {
-        const { mindMapData, positions } = get();
+        const { mindMapData, positions, rfNodes } = get();
         const newId = nanoid(8);
         const newNode: MindNode = { id: newId, type, label: '새 노드', note: '', collapsed: false };
         // index 위치에 삽입 (생략 시 맨 끝)
@@ -195,10 +292,11 @@ export const useMindMapStore = create<MindMapStore>()(
           },
         };
         // 새 노드를 곧바로 선택한다 (키보드 흐름: 생성 → 선택 → 편집)
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, newId);
-        const laidOut = applyTreeLayout(rfNodes, rfEdges);
-        const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
-        set({ mindMapData: newData, rfNodes: laidOut, rfEdges, positions: newPositions, selectedNodeId: newId });
+        set({
+          mindMapData: newData,
+          selectedNodeId: newId,
+          ...project(newData, positions, newId, rfNodes, true),
+        });
         return newId;
       },
 
@@ -214,13 +312,14 @@ export const useMindMapStore = create<MindMapStore>()(
       },
 
       updateNodeLabel: (id, label) => {
-        const { mindMapData, positions, selectedNodeId } = get();
+        const { mindMapData, positions, selectedNodeId, rfNodes } = get();
         const newData = {
           ...mindMapData,
           nodes: { ...mindMapData.nodes, [id]: { ...mindMapData.nodes[id], label } },
         };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, selectedNodeId);
-        set({ mindMapData: newData, rfNodes, rfEdges });
+        // 라벨 길이가 바뀌면 노드 폭도 바뀐다. 실측은 렌더 후에야 오므로 여기서는
+        // 배치를 미루고, onRfNodesChange의 dimensions 변경 처리에서 재배치한다.
+        set({ mindMapData: newData, ...project(newData, positions, selectedNodeId, rfNodes, false) });
       },
 
       // 끝에 붙이는 단순 재배치 (moveNode의 append 형태)
@@ -230,7 +329,7 @@ export const useMindMapStore = create<MindMapStore>()(
       // nodeId를 newParentId의 children 중 index 위치로 이동.
       // 같은 부모 안에서도 동작하므로 형제 순서 변경(reorder)에 쓰인다.
       moveNode: (nodeId, newParentId, index) => {
-        const { mindMapData, positions, selectedNodeId } = get();
+        const { mindMapData, positions, selectedNodeId, rfNodes } = get();
         const { rootId, children } = mindMapData;
 
         // 검증: 루트는 이동 불가 / 자기 자신에 붙일 수 없음
@@ -265,16 +364,13 @@ export const useMindMapStore = create<MindMapStore>()(
         }
 
         const newData = { ...mindMapData, children: newChildren };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, selectedNodeId);
-        const laidOut = applyTreeLayout(rfNodes, rfEdges);
-        const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
-        set({ mindMapData: newData, rfNodes: laidOut, rfEdges, positions: newPositions });
+        set({ mindMapData: newData, ...project(newData, positions, selectedNodeId, rfNodes, true) });
       },
 
       deleteNode: (id) => get().deleteNodes([id]),
 
       deleteNodes: (ids) => {
-        const { mindMapData, positions } = get();
+        const { mindMapData, positions, rfNodes } = get();
         // 삭제 대상 + 모든 후손 수집 (루트는 제외)
         const toDelete = new Set<string>();
         for (const id of ids) {
@@ -299,49 +395,48 @@ export const useMindMapStore = create<MindMapStore>()(
             .map(([k, v]) => [k, v.filter((c) => !toDelete.has(c))])
         );
         const newData = { ...mindMapData, nodes: newNodes, children: newChildren };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions);
-        const laidOut = applyTreeLayout(rfNodes, rfEdges);
-        const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
         set({
           mindMapData: newData,
-          rfNodes: laidOut,
-          rfEdges,
-          positions: newPositions,
           selectedNodeId: null,
           isNoteDrawerOpen: false,
+          ...project(newData, positions, null, rfNodes, true),
         });
       },
 
       toggleCollapse: (id) => {
-        const { mindMapData, positions, selectedNodeId } = get();
+        const { mindMapData, positions, selectedNodeId, rfNodes } = get();
         const node = mindMapData.nodes[id];
         if (!node) return;
         const newData = {
           ...mindMapData,
           nodes: { ...mindMapData.nodes, [id]: { ...node, collapsed: !node.collapsed } },
         };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, selectedNodeId);
-        set({ mindMapData: newData, rfNodes, rfEdges });
+        // 접거나 펴면 보이는 노드 집합이 달라지므로 다시 배치해 빈 자리를 메운다
+        set({ mindMapData: newData, ...project(newData, positions, selectedNodeId, rfNodes, true) });
       },
 
       updateNodeNote: (id, note) => {
-        const { mindMapData, positions, selectedNodeId } = get();
+        const { mindMapData, positions, selectedNodeId, rfNodes } = get();
         const newData = {
           ...mindMapData,
           nodes: { ...mindMapData.nodes, [id]: { ...mindMapData.nodes[id], note } },
         };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, selectedNodeId);
-        set({ mindMapData: newData, rfNodes, rfEdges });
+        // 노트 타이핑은 undo 히스토리에 넣지 않는다. BlockNote가 자체 undo를 가지고 있고,
+        // 300ms마다 문서 전체 스냅샷이 쌓이면 캔버스 Ctrl+Z가 "타이핑 되돌리기"로 변질된다.
+        const temporalState = useMindMapStore.temporal.getState();
+        const wasTracking = temporalState.isTracking;
+        if (wasTracking) temporalState.pause();
+        set({ mindMapData: newData, ...project(newData, positions, selectedNodeId, rfNodes, false) });
+        if (wasTracking) temporalState.resume();
       },
 
       updateNodeTableData: (id, tableData) => {
-        const { mindMapData, positions, selectedNodeId } = get();
+        const { mindMapData, positions, selectedNodeId, rfNodes } = get();
         const newData = {
           ...mindMapData,
           nodes: { ...mindMapData.nodes, [id]: { ...mindMapData.nodes[id], tableData } },
         };
-        const { rfNodes, rfEdges } = buildReactFlow(newData, positions, selectedNodeId);
-        set({ mindMapData: newData, rfNodes, rfEdges });
+        set({ mindMapData: newData, ...project(newData, positions, selectedNodeId, rfNodes, false) });
       },
 
       // 선택 변경 시 rfNodes의 selected 플래그도 갱신 → 링 표시가 store 선택을 따른다.
@@ -356,6 +451,81 @@ export const useMindMapStore = create<MindMapStore>()(
 
       setEditingNodeId: (id) => set({ editingNodeId: id }),
 
+      // LR 배치 기준 방향키 탐색.
+      // 오른쪽 = 첫 자식(접혀 있으면 먼저 펼침), 왼쪽 = 부모, 위/아래 = 형제.
+      selectRelative: (dir) => {
+        const { mindMapData, selectedNodeId } = get();
+        const { children, nodes, rootId } = mindMapData;
+
+        // 선택이 없으면 루트부터 시작
+        if (!selectedNodeId || !nodes[selectedNodeId]) {
+          get().setSelectedNodeId(rootId);
+          get().focusNode(rootId);
+          return;
+        }
+
+        const go = (id: string) => {
+          get().setSelectedNodeId(id);
+          get().focusNode(id);
+        };
+
+        if (dir === 'right') {
+          const kids = children[selectedNodeId] ?? [];
+          if (kids.length === 0) return;
+          if (nodes[selectedNodeId].collapsed) get().toggleCollapse(selectedNodeId);
+          go(kids[0]);
+          return;
+        }
+
+        const parentId = findParent(selectedNodeId, children);
+
+        if (dir === 'left') {
+          if (parentId) go(parentId);
+          return;
+        }
+
+        if (!parentId) return; // 루트는 형제가 없다
+        const sibs = children[parentId] ?? [];
+        const i = sibs.indexOf(selectedNodeId);
+        const next = dir === 'up' ? i - 1 : i + 1;
+        if (next >= 0 && next < sibs.length) go(sibs[next]);
+      },
+
+      revealNode: (id) => {
+        const { mindMapData, positions, selectedNodeId, rfNodes } = get();
+        const { parent } = buildTreeIndex(mindMapData.rootId, mindMapData.children);
+        // 접혀 있는 조상만 모아서 한 번에 펼친다
+        const toOpen: string[] = [];
+        let cur = parent.get(id);
+        while (cur) {
+          if (mindMapData.nodes[cur]?.collapsed) toOpen.push(cur);
+          cur = parent.get(cur);
+        }
+        if (toOpen.length === 0) return;
+        const newNodes = { ...mindMapData.nodes };
+        for (const ancestorId of toOpen) {
+          newNodes[ancestorId] = { ...newNodes[ancestorId], collapsed: false };
+        }
+        const newData = { ...mindMapData, nodes: newNodes };
+        set({ mindMapData: newData, ...project(newData, positions, selectedNodeId, rfNodes, true) });
+      },
+
+      focusNode: (id, center = false) =>
+        set((state) => ({
+          focusRequest: { id, center, seq: (state.focusRequest?.seq ?? 0) + 1 },
+        })),
+
+      setSearchOpen: (open) => set({ isSearchOpen: open }),
+
+      setSaveStatus: (status, error = null, savedAt) =>
+        set((state) => ({
+          saveStatus: status,
+          saveError: error,
+          lastSavedAt: savedAt ?? state.lastSavedAt,
+        })),
+
+      setExternalChange: (value) => set({ hasExternalChange: value }),
+
       openNoteDrawer: (nodeId) => set({ selectedNodeId: nodeId, isNoteDrawerOpen: true }),
 
       closeNoteDrawer: () => set({ isNoteDrawerOpen: false }),
@@ -367,12 +537,33 @@ export const useMindMapStore = create<MindMapStore>()(
       },
 
       onRfNodesChange: (changes) => {
-        // 노드 드래그가 비활성(nodesDraggable=false)이라 위치는 안 바뀐다.
-        // 선택/치수 변경 등 시각 상태만 rfNodes에 반영하고, positions는 건드리지 않는다.
-        // (positions를 매번 새로 만들면 undo 히스토리에 노이즈가 쌓인다)
-        set((state) => ({
-          rfNodes: applyNodeChanges(changes, state.rfNodes) as MindMapNode[],
-        }));
+        const prevNodes = get().rfNodes;
+
+        // dimensions 이벤트가 하나도 없으면 크기는 그대로다 → 비교조차 하지 않는다
+        const hasDimensionChange = changes.some((c) => c.type === 'dimensions');
+        const nextNodes = applyNodeChanges(changes, prevNodes) as MindMapNode[];
+        if (!hasDimensionChange) {
+          set({ rfNodes: nextNodes });
+          return;
+        }
+
+        // dimensions 이벤트가 왔다고 크기가 실제로 바뀐 건 아니다. ReactFlow는 리사이즈
+        // 관찰자가 발화할 때마다 같은 값으로도 알려주기 때문에, 값이 정말 달라졌을 때만
+        // 재배치한다. (표 셀에 타이핑할 때마다 전체 트리를 다시 계산하던 낭비 제거)
+        const sizeKey = (n: MindMapNode) => `${n.measured?.width ?? 0}x${n.measured?.height ?? 0}`;
+        const prevSizes = new Map(prevNodes.map((n) => [n.id, sizeKey(n)]));
+        const resized = nextNodes.some((n) => prevSizes.get(n.id) !== sizeKey(n));
+        if (!resized) {
+          set({ rfNodes: nextNodes });
+          return;
+        }
+
+        // 배치 결과는 데이터에서 파생되므로 히스토리에는 남지 않는다 (equality가 mindMapData만 비교)
+        const laidOut = applyTreeLayout(nextNodes, get().rfEdges);
+        set({
+          rfNodes: laidOut,
+          positions: Object.fromEntries(laidOut.map((n) => [n.id, n.position])),
+        });
       },
 
       onRfEdgesChange: (changes) => {
@@ -384,21 +575,46 @@ export const useMindMapStore = create<MindMapStore>()(
       applyLayout: () => {
         const { rfNodes, rfEdges } = get();
         const laidOut = applyTreeLayout(rfNodes, rfEdges);
-        const newPositions = Object.fromEntries(laidOut.map((n) => [n.id, n.position]));
-        set({ rfNodes: laidOut, positions: newPositions });
+        set({
+          rfNodes: laidOut,
+          positions: Object.fromEntries(laidOut.map((n) => [n.id, n.position])),
+        });
       },
 
       loadFromPersisted: (mindMapData, positions) => {
-        const { rfNodes, rfEdges } = buildReactFlow(mindMapData, positions, get().selectedNodeId);
-        set({ mindMapData, rfNodes, rfEdges, positions });
+        // 다른 맵을 불러오는 것이므로 이전 노드의 실측 크기는 물려받지 않는다
+        set({ mindMapData, ...project(mindMapData, positions, get().selectedNodeId, [], false) });
+      },
+
+      setMapTitle: (title) =>
+        set((state) => ({ mindMapData: { ...state.mindMapData, title } })),
+
+      openMap: (mindMapData, positions) => {
+        // 위치가 저장돼 있지 않은 맵(새로 만든 맵)은 곧바로 배치한다
+        const relayout = Object.keys(positions).length === 0;
+        set({
+          mindMapData,
+          selectedNodeId: null,
+          editingNodeId: null,
+          isNoteDrawerOpen: false,
+          hasExternalChange: false,
+          ...project(mindMapData, positions, null, [], relayout),
+        });
+        // undo가 이전 맵으로 되돌아가면 안 된다
+        useMindMapStore.temporal.getState().clear();
       },
 
       // undo/redo는 mindMapData/positions만 복원하므로, 파생 상태인
       // rfNodes/rfEdges를 다시 만들어줘야 캔버스에 반영된다.
       syncRfFromData: () => {
-        const { mindMapData, positions, selectedNodeId } = get();
-        const { rfNodes, rfEdges } = buildReactFlow(mindMapData, positions, selectedNodeId);
-        set({ rfNodes, rfEdges });
+        const { mindMapData, positions, selectedNodeId, rfNodes } = get();
+        const { rfNodes: next, rfEdges } = buildReactFlow(
+          mindMapData,
+          positions,
+          selectedNodeId,
+          rfNodes
+        );
+        set({ rfNodes: next, rfEdges });
       },
     }),
     {
@@ -406,10 +622,10 @@ export const useMindMapStore = create<MindMapStore>()(
         mindMapData: state.mindMapData,
         positions: state.positions,
       }),
-      // mindMapData/positions 참조가 실제로 바뀐 set만 히스토리에 기록한다.
-      // (선택·노트열기 등 데이터와 무관한 set은 기록하지 않음)
-      equality: (a, b) =>
-        a.mindMapData === b.mindMapData && a.positions === b.positions,
+      // mindMapData 참조가 실제로 바뀐 set만 히스토리에 기록한다.
+      // positions는 mindMapData에서 파생되는 배치 결과일 뿐이라 비교 대상이 아니다.
+      // (측정에 따른 재배치가 히스토리를 오염시키던 원인)
+      equality: (a, b) => a.mindMapData === b.mindMapData,
     }
   )
 );

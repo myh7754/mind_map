@@ -1,19 +1,30 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { MindMapCanvas } from './components/MindMapCanvas/MindMapCanvas';
 import { Toolbar } from './components/Toolbar/Toolbar';
 import { NoteDrawer } from './components/NoteDrawer/NoteDrawer';
+import { SearchPanel } from './components/SearchPanel/SearchPanel';
+import { SyncBanner } from './components/SyncBanner/SyncBanner';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useMindMapStore, useUndoRedo } from './store/useMindMapStore';
-import { saveMindMap, loadMindMap } from './db/mindmapDB';
+import { useAutosave } from './hooks/useAutosave';
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import { listMaps, loadMindMap } from './db/mindmapDB';
 
-const AUTOSAVE_DELAY = 500;
-const DEFAULT_MAP_ID = 'default';
+// 마지막으로 열어둔 맵. 새로고침해도 보던 과목으로 돌아온다.
+const LAST_MAP_KEY = 'last-map-id';
 
 export default function App() {
-  const { mindMapData, positions, setNoteDrawerWidth, loadFromPersisted, applyLayout } =
-    useMindMapStore();
+  // 선택자로 구독한다. 스토어 전체를 구독하면 저장 상태가 바뀔 때마다
+  // App까지 다시 렌더된다.
+  const mindMapData = useMindMapStore((s) => s.mindMapData);
+  const positions = useMindMapStore((s) => s.positions);
+  const setNoteDrawerWidth = useMindMapStore((s) => s.setNoteDrawerWidth);
+  const loadFromPersisted = useMindMapStore((s) => s.loadFromPersisted);
+  const applyLayout = useMindMapStore((s) => s.applyLayout);
   const { undo, redo } = useUndoRedo();
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isInitialized = useRef(false);
+
+  // 초기 로드가 끝나기 전에는 자동 저장을 켜지 않는다 (빈 초기값이 덮어쓰는 것 방지)
+  const [ready, setReady] = useState(false);
 
   // 마운트 시: localStorage에서 noteDrawerWidth 복원 + IndexedDB에서 마인드맵 로드
   useEffect(() => {
@@ -23,87 +34,46 @@ export default function App() {
       if (!isNaN(parsed)) setNoteDrawerWidth(parsed);
     }
 
-    loadMindMap(DEFAULT_MAP_ID).then((persisted) => {
-      if (persisted) {
-        loadFromPersisted(persisted.mindMapData, persisted.positions);
-      } else {
-        // 초기 데이터도 IndexedDB에 저장
+    // 마지막에 보던 맵 → 없으면 가장 최근 수정한 맵 → 그것도 없으면 초기 데이터
+    listMaps()
+      .then(async (maps) => {
+        const lastId = localStorage.getItem(LAST_MAP_KEY);
+        const target = maps.find((m) => m.id === lastId) ?? maps[0];
+        const persisted = target ? await loadMindMap(target.id) : undefined;
+        if (persisted) {
+          loadFromPersisted(persisted.mindMapData, persisted.positions);
+        } else {
+          applyLayout();
+        }
+      })
+      .catch((err: unknown) => {
+        // 불러오기 실패는 초기 데이터로 계속 진행하되, 조용히 넘기지는 않는다
+        const message = err instanceof Error ? err.message : String(err);
+        useMindMapStore.getState().setSaveStatus('error', `불러오기 실패: ${message}`);
         applyLayout();
-      }
-      isInitialized.current = true;
-    });
-  // 마운트 한 번만 실행
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+      })
+      .finally(() => setReady(true));
+    // 마운트 한 번만 실행
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // mindMapData/positions 변경 시 debounced 자동 저장
+  // 보고 있는 맵을 기억해 둔다
   useEffect(() => {
-    if (!isInitialized.current) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      saveMindMap(mindMapData, positions);
-    }, AUTOSAVE_DELAY);
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-    };
-  }, [mindMapData, positions]);
+    if (ready) localStorage.setItem(LAST_MAP_KEY, mindMapData.id);
+  }, [mindMapData.id, ready]);
 
-  // 전역 단축키: Ctrl+Z/Y(되돌리기) + XMind식 노드 편집(Tab/Enter/F2/Escape)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      // 입력 필드 / 노트 에디터(contentEditable) 안에서는 단축키를 가로채지 않는다
-      const inField =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target.isContentEditable;
-
-      // ── Ctrl/Meta 조합: 되돌리기/다시실행 ──
-      if (e.ctrlKey || e.metaKey) {
-        if (inField) return; // 입력 중에는 자체 undo에 맡긴다
-        if (e.key === 'z') {
-          e.preventDefault();
-          undo();
-        } else if (e.key === 'y') {
-          e.preventDefault();
-          redo();
-        }
-        return;
-      }
-
-      if (inField) return; // 라벨/노트 편집 중에는 노드 단축키 무시
-
-      const store = useMindMapStore.getState();
-      const sel = store.selectedNodeId;
-
-      // Tab = 자식 추가, Enter = 형제 추가 (둘 다 만든 뒤 곧바로 편집 모드)
-      if (e.key === 'Tab') {
-        e.preventDefault(); // 기본 포커스 이동 방지
-        if (!sel) return;
-        const newId = store.addChildNode(sel);
-        store.setEditingNodeId(newId);
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (!sel) return;
-        const newId = store.addSiblingNode(sel);
-        if (newId) store.setEditingNodeId(newId);
-      } else if (e.key === 'F2') {
-        e.preventDefault();
-        // 표 노드는 인라인 라벨 입력이 없으므로 텍스트 노드만 편집 모드로
-        if (sel && store.mindMapData.nodes[sel]?.type === 'text') store.setEditingNodeId(sel);
-      } else if (e.key === 'Escape') {
-        store.setSelectedNodeId(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo]);
+  useAutosave(mindMapData, positions, ready);
+  useGlobalShortcuts(undo, redo);
 
   return (
     <div className="flex flex-col h-full bg-slate-950">
       <Toolbar />
-      <div className="flex flex-1 min-h-0">
-        <MindMapCanvas />
+      <div className="flex flex-1 min-h-0 relative">
+        <ErrorBoundary label="캔버스를 표시하지 못했습니다.">
+          <MindMapCanvas />
+        </ErrorBoundary>
+        <SyncBanner />
+        <SearchPanel />
         <NoteDrawer />
       </div>
     </div>

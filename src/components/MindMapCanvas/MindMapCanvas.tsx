@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -8,6 +8,7 @@ import {
   SelectionMode,
   ViewportPortal,
   useReactFlow,
+  useStore,
   type NodeTypes,
   type EdgeTypes,
   type Node,
@@ -30,6 +31,7 @@ const edgeTypes: EdgeTypes = {
 };
 
 const SLOT_GAP = 12; // 슬롯 위/아래 여백(px)
+const VIEW_MARGIN = 48; // 이 여백 안쪽에 들어와 있어야 "보인다"고 판단
 
 // children 맵에서 nodeId의 부모를 찾는다. 없으면 null(루트).
 function findParentId(nodeId: string, children: Record<string, string[]>): string | null {
@@ -52,8 +54,35 @@ function Flow() {
     moveNode,
     syncRfFromData,
     mindMapData,
+    focusRequest,
   } = useMindMapStore();
-  const { getNodes } = useReactFlow();
+  const { getNodes, setCenter, getViewport } = useReactFlow();
+  // ReactFlow 내부 스토어가 들고 있는 캔버스(pane) 실제 픽셀 크기
+  const paneWidth = useStore((s) => s.width);
+  const paneHeight = useStore((s) => s.height);
+
+  // 키보드 탐색/검색이 요청한 노드로 화면을 따라가게 한다.
+  // 방향키 탐색은 화면 밖으로 나갔을 때만 움직여야 덜 어지럽고,
+  // 검색 결과 점프(center=true)는 항상 가운데로 데려간다.
+  useEffect(() => {
+    if (!focusRequest) return;
+    const node = getNodes().find((n) => n.id === focusRequest.id);
+    if (!node || node.hidden) return;
+
+    const w = node.measured?.width ?? node.width ?? 160;
+    const h = node.measured?.height ?? node.height ?? 40;
+    const { x: vx, y: vy, zoom } = getViewport();
+    const left = node.position.x * zoom + vx;
+    const top = node.position.y * zoom + vy;
+    const visible =
+      left >= VIEW_MARGIN &&
+      top >= VIEW_MARGIN &&
+      left + w * zoom <= paneWidth - VIEW_MARGIN &&
+      top + h * zoom <= paneHeight - VIEW_MARGIN;
+
+    if (!focusRequest.center && visible) return;
+    setCenter(node.position.x + w / 2, node.position.y + h / 2, { zoom, duration: 250 });
+  }, [focusRequest, getNodes, getViewport, setCenter, paneWidth, paneHeight]);
 
   // 드래그 중인 노드 + 드롭 결정(부모/삽입 인덱스). 렌더(슬롯·간선)에 사용.
   const [draggingId, setDraggingId] = useState<string | null>(null);

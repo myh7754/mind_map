@@ -57,6 +57,44 @@ describe('undo/redo', () => {
     expect(pastLenAfterSelect).toBe(pastLenAfterAdd);
   });
 
+  it('노트 편집은 히스토리에 기록되지 않는다 (BlockNote 자체 undo에 맡김)', () => {
+    const rootId = useMindMapStore.getState().mindMapData.rootId;
+    const pastLenBefore = useMindMapStore.temporal.getState().pastStates.length;
+
+    useMindMapStore.getState().updateNodeNote(rootId, '[{"type":"paragraph"}]');
+    useMindMapStore.getState().updateNodeNote(rootId, '[{"type":"paragraph","x":1}]');
+
+    expect(useMindMapStore.temporal.getState().pastStates.length).toBe(pastLenBefore);
+    // 기록은 안 하지만 값은 반영된다
+    expect(useMindMapStore.getState().mindMapData.nodes[rootId].note).toContain('x');
+    // 노트 편집 후에도 추적은 다시 켜져 있어야 한다
+    expect(useMindMapStore.temporal.getState().isTracking).toBe(true);
+  });
+
+  it('노트 편집 후에도 구조 변경은 정상적으로 undo된다', () => {
+    const rootId = useMindMapStore.getState().mindMapData.rootId;
+    useMindMapStore.getState().updateNodeNote(rootId, '[{"type":"paragraph"}]');
+
+    const before = Object.keys(useMindMapStore.getState().mindMapData.nodes).length;
+    useMindMapStore.getState().addChildNode(rootId, 'text');
+    useMindMapStore.temporal.getState().undo();
+
+    expect(Object.keys(useMindMapStore.getState().mindMapData.nodes).length).toBe(before);
+    // undo가 노트까지 날려버리면 안 된다
+    expect(useMindMapStore.getState().mindMapData.nodes[rootId].note).toBe('[{"type":"paragraph"}]');
+  });
+
+  it('측정에 따른 재배치(위치 변경)는 히스토리에 쌓이지 않는다', () => {
+    const rootId = useMindMapStore.getState().mindMapData.rootId;
+    const pastLenBefore = useMindMapStore.temporal.getState().pastStates.length;
+
+    useMindMapStore.getState().onRfNodesChange([
+      { id: rootId, type: 'dimensions', dimensions: { width: 300, height: 120 } },
+    ]);
+
+    expect(useMindMapStore.temporal.getState().pastStates.length).toBe(pastLenBefore);
+  });
+
   it('선택 후 undo는 여전히 노드 추가를 되돌린다 (선택 노이즈에 막히지 않음)', () => {
     const rootId = useMindMapStore.getState().mindMapData.rootId;
     const before = Object.keys(useMindMapStore.getState().mindMapData.nodes).length;
