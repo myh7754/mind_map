@@ -64,6 +64,18 @@ export function noteToPlainText(noteJson: string): string {
   return plain;
 }
 
+/**
+ * 이 노드에 실제로 적힌 내용이 있는가 (노드에 노트 표시를 띄울지 판단).
+ *
+ * `note !== ''` 로는 안 된다. 노트를 열었다 닫기만 해도 BlockNote가
+ * `[{"type":"paragraph","content":[]}]` 같은 빈 문서를 저장하기 때문에,
+ * 문자열 길이로 보면 "한 번 열어본 모든 노드"에 표시가 붙는다.
+ * 평문으로 바꿔서 글자가 남는지 본다(캐시가 있어 매 렌더마다 파싱하지 않는다).
+ */
+export function hasNoteContent(noteJson: string): boolean {
+  return noteToPlainText(noteJson).length > 0;
+}
+
 /** 테스트용: 캐시 비우기 */
 export function clearNoteTextCache(): void {
   cache.clear();

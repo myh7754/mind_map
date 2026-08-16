@@ -2,6 +2,7 @@ import { memo, useState, useRef, useEffect } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { MindMapNode } from '../../types';
 import { useMindMapStore } from '../../store/useMindMapStore';
+import { hasNoteContent } from '../../utils/noteText';
 
 export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps<MindMapNode>) {
   const [label, setLabel] = useState(data.label);
@@ -12,6 +13,7 @@ export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps
   // 편집 상태는 스토어가 단일 출처: 더블클릭/F2/Tab·Enter(생성 직후) 모두 여기로 모인다.
   const editing = editingNodeId === id;
   const hasChildren = (mindMapData.children[id] ?? []).length > 0;
+  const noted = hasNoteContent(data.note);
 
   useEffect(() => {
     setLabel(data.label);
@@ -64,14 +66,30 @@ export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps
         <span className="flex-1">{data.label}</span>
       )}
 
-      <div className="hidden group-hover:flex items-center gap-1 ml-1">
+      {/* 내용이 있는 노트는 항상 표시한다 — 펼치지 않고도 "여기 뭔가 적혀 있다"를 알 수 있게.
+          hover 시 숨기지 않는 이유: 노드 폭이 바뀌면 실측 크기가 달라져 배치가 다시 계산된다
+          (useMindMapStore의 onRfNodesChange). 마우스만 올려도 맵이 출렁이게 된다. */}
+      {noted && (
         <button
-          className="text-xs px-1.5 py-0.5 rounded bg-indigo-600 text-white hover:bg-indigo-500"
+          className="shrink-0 text-[11px] leading-none opacity-80 hover:opacity-100"
           onClick={(e) => { e.stopPropagation(); openNoteDrawer(id); }}
-          title="노트 열기"
+          title="노트 보기"
+          aria-label="노트 있음"
         >
           📝
         </button>
+      )}
+
+      <div className="hidden group-hover:flex items-center gap-1 ml-1">
+        {!noted && (
+          <button
+            className="text-xs px-1.5 py-0.5 rounded bg-indigo-600 text-white hover:bg-indigo-500"
+            onClick={(e) => { e.stopPropagation(); openNoteDrawer(id); }}
+            title="노트 열기"
+          >
+            📝
+          </button>
+        )}
         <button
           className="text-xs px-1.5 py-0.5 rounded bg-slate-600 text-white hover:bg-slate-500"
           onClick={(e) => { e.stopPropagation(); deleteNode(id); }}

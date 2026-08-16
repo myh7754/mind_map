@@ -2,10 +2,12 @@ import { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { MindMapNode } from '../../types';
 import { useMindMapStore } from '../../store/useMindMapStore';
+import { hasNoteContent } from '../../utils/noteText';
 
 export const TableNode = memo(function TableNode({ data, id, selected }: NodeProps<MindMapNode>) {
   const { updateNodeTableData, openNoteDrawer, deleteNode } = useMindMapStore();
   const tableData = data.tableData ?? { headers: ['컬럼 1', '컬럼 2'], rows: [['', '']] };
+  const noted = hasNoteContent(data.note);
 
   const updateCell = (rowIdx: number, colIdx: number, value: string) => {
     const newRows = tableData.rows.map((row, ri) =>
@@ -42,14 +44,29 @@ export const TableNode = memo(function TableNode({ data, id, selected }: NodePro
       <Handle type="target" position={Position.Left} className="!opacity-0" />
 
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-slate-400 font-medium">📊 {data.label}</span>
+        <span className="text-xs text-slate-400 font-medium">
+          📊 {data.label}
+          {/* 내용이 있는 노트는 항상 표시 (TextNode와 동일한 규칙) */}
+          {noted && (
+            <button
+              className="ml-1 text-[11px] leading-none opacity-80 hover:opacity-100"
+              onClick={(e) => { e.stopPropagation(); openNoteDrawer(id); }}
+              title="노트 보기"
+              aria-label="노트 있음"
+            >
+              📝
+            </button>
+          )}
+        </span>
         <div className="hidden group-hover:flex gap-1">
-          <button
-            className="text-xs px-1 rounded bg-indigo-600 text-white"
-            onClick={() => openNoteDrawer(id)}
-          >
-            📝
-          </button>
+          {!noted && (
+            <button
+              className="text-xs px-1 rounded bg-indigo-600 text-white"
+              onClick={() => openNoteDrawer(id)}
+            >
+              📝
+            </button>
+          )}
           <button
             className="text-xs px-1 rounded bg-slate-600 text-white"
             onClick={() => deleteNode(id)}

@@ -1,7 +1,40 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { noteToPlainText, clearNoteTextCache } from './noteText';
+import { noteToPlainText, hasNoteContent, clearNoteTextCache } from './noteText';
 
 beforeEach(() => clearNoteTextCache());
+
+describe('hasNoteContent', () => {
+  it('아예 비어 있으면 false', () => {
+    expect(hasNoteContent('')).toBe(false);
+  });
+
+  it('열었다 닫기만 한 빈 문서는 false — 이게 핵심', () => {
+    // BlockNote가 저장하는 빈 문서. 문자열 길이로 보면 40자가 넘어 true가 돼버린다.
+    expect(hasNoteContent(JSON.stringify([{ type: 'paragraph', content: [] }]))).toBe(false);
+    expect(hasNoteContent(JSON.stringify([{ type: 'paragraph', content: '' }]))).toBe(false);
+  });
+
+  it('공백만 있어도 false', () => {
+    const note = JSON.stringify([
+      { type: 'paragraph', content: [{ type: 'text', text: '   ', styles: {} }] },
+    ]);
+    expect(hasNoteContent(note)).toBe(false);
+  });
+
+  it('글자가 하나라도 있으면 true', () => {
+    const note = JSON.stringify([
+      { type: 'paragraph', content: [{ type: 'text', text: 'volatile', styles: {} }] },
+    ]);
+    expect(hasNoteContent(note)).toBe(true);
+  });
+
+  it('코드 블록만 있어도 true', () => {
+    const note = JSON.stringify([
+      { type: 'codeBlock', props: { language: 'java' }, content: 'int a = 1;' },
+    ]);
+    expect(hasNoteContent(note)).toBe(true);
+  });
+});
 
 describe('noteToPlainText', () => {
   it('빈 노트는 빈 문자열', () => {
