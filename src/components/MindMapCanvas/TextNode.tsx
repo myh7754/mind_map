@@ -80,10 +80,14 @@ export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps
         </button>
       )}
 
-      <div className="hidden group-hover:flex items-center gap-1 ml-1">
+      {/* 액션 버튼은 노드 '위에 떠서' 나온다 (absolute).
+          흐름 안에 두면 hover 하는 순간 노드가 넓어지고, 그 바람에 오른쪽의 접기 버튼이
+          28px 밀려난다 — 접으려다 그 자리에 들어온 ✕(삭제)를 누르게 된다. 실제로 겪었다.
+          띄워두면 노드 폭이 hover와 무관하게 고정되어 접기 버튼이 움직이지 않는다. */}
+      <div className="hidden group-hover:flex items-center gap-1 absolute -top-3 right-1 z-20">
         {!noted && (
           <button
-            className="text-xs px-1.5 py-0.5 rounded bg-indigo-600 text-white hover:bg-indigo-500"
+            className="text-xs px-1.5 py-0.5 rounded bg-indigo-600 text-white hover:bg-indigo-500 shadow"
             onClick={(e) => { e.stopPropagation(); openNoteDrawer(id); }}
             title="노트 열기"
           >
@@ -91,7 +95,7 @@ export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps
           </button>
         )}
         <button
-          className="text-xs px-1.5 py-0.5 rounded bg-slate-600 text-white hover:bg-slate-500"
+          className="text-xs px-1.5 py-0.5 rounded bg-slate-600 text-white hover:bg-red-600 shadow"
           onClick={(e) => { e.stopPropagation(); deleteNode(id); }}
           title="삭제"
         >
@@ -101,7 +105,8 @@ export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps
 
       {hasChildren && (
         <button
-          className="absolute -right-4 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-slate-700 border border-slate-500 text-xs flex items-center justify-center text-slate-300 hover:bg-slate-600 z-10"
+          // before:-inset-2 = 보이는 크기는 그대로 두고 클릭 판정만 사방 8px 넓힌다.
+          className="absolute -right-5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-700 border border-slate-500 text-sm leading-none flex items-center justify-center text-slate-200 hover:bg-indigo-600 hover:border-indigo-400 z-10 before:absolute before:-inset-2 before:content-['']"
           onClick={(e) => { e.stopPropagation(); toggleCollapse(id); }}
           title={data.collapsed ? '펼치기' : '접기'}
         >
