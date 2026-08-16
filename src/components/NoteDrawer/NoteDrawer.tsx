@@ -2,6 +2,7 @@ import { Suspense, lazy } from 'react';
 import { useMindMapStore } from '../../store/useMindMapStore';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { ResizeHandle } from './ResizeHandle';
+import { LinkPanel } from './LinkPanel';
 
 // BlockNote + Mantine은 1MB가 넘는데 노트 드로어는 기본으로 닫혀 있다.
 // 지연 로딩해서 초기 번들에서 떼어낸다 (드로어를 처음 열 때 받아온다).
@@ -75,6 +76,8 @@ export function NoteDrawer() {
               </div>
             )}
           </div>
+
+          {selectedNodeId && <LinkPanel nodeId={selectedNodeId} />}
         </>
       )}
     </div>
