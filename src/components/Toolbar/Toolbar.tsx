@@ -60,9 +60,14 @@ export function Toolbar() {
   };
 
   return (
-    // 버튼이 많아 좁은 화면에서 글자가 단어 중간에 줄바꿈되던 것을 막는다.
-    // 줄바꿈 대신 가로 스크롤로 넘긴다. ([&>*]:shrink-0 = 자식들이 찌그러지지 않게)
-    <div className="flex items-center gap-2 px-4 py-2 bg-slate-900 border-b border-slate-700 flex-shrink-0 whitespace-nowrap overflow-x-auto [&>*]:shrink-0">
+    // 좁은 화면에서는 버튼을 다음 줄로 흘려보낸다(flex-wrap).
+    // whitespace-nowrap + [&>*]:shrink-0 = 버튼 글자가 단어 중간에 끊기거나 찌그러지지 않게.
+    //
+    // ⚠️ overflow-x-auto 를 다시 넣지 말 것. overflow는 한 축만 visible이 아니어도
+    // 나머지 축의 visible이 auto로 바뀐다(CSS 명세) → 높이 45px인 툴바가 세로로도
+    // 클리핑 컨테이너가 되어, 이 안의 드롭다운(맵 목록·계정 메뉴)이 통째로 잘려
+    // "DOM에는 있는데 화면에 안 보이는" 상태가 된다.
+    <div className="flex flex-wrap items-center gap-2 px-4 py-2 bg-slate-900 border-b border-slate-700 flex-shrink-0 whitespace-nowrap [&>*]:shrink-0">
       <span className="text-indigo-400 font-semibold text-sm">🗺</span>
       <MapSwitcher />
       <div className="w-px h-5 bg-slate-700 mx-1" />
