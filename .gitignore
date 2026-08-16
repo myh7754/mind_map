@@ -4,3 +4,7 @@ dist/
 *.local
 .idea/
 .vscode/
+
+# 로컬 환경변수 (Supabase 키 등)
+.env.local
+.env*.local

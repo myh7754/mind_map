@@ -53,6 +53,7 @@ export async function listMaps(): Promise<MapSummary[]> {
   const db = await getDB();
   const all: (PersistedState & { id: string })[] = await db.getAll(STORE_NAME);
   return all
+    .filter((r) => !r.deletedAt)
     .map((r) => ({
       id: r.id,
       title: r.mindMapData?.title ?? '제목 없음',
@@ -61,7 +62,45 @@ export async function listMaps(): Promise<MapSummary[]> {
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+/**
+ * 소프트 삭제. 내용은 버리고 삭제 표시만 남긴다.
+ * 이 표시가 있어야 다른 기기가 "지워진 맵"임을 알고 되살리지 않는다.
+ */
 export async function deleteMap(id: string): Promise<void> {
   const db = await getDB();
+  const record = await db.get(STORE_NAME, id);
+  if (!record) return;
+  await db.put(STORE_NAME, {
+    ...record,
+    mindMapData: { ...record.mindMapData, nodes: {}, children: {} },
+    positions: {},
+    deletedAt: Date.now(),
+  });
+}
+
+/** 흔적까지 완전히 제거 (클라우드에서도 지워진 게 확인된 뒤 정리용) */
+export async function purgeMap(id: string): Promise<void> {
+  const db = await getDB();
   await db.delete(STORE_NAME, id);
+}
+
+/** 동기화 판단에 쓰는 목록 — 삭제된 것까지 포함한다 */
+export async function listSyncEntries(): Promise<
+  { id: string; updatedAt: number; deletedAt?: number }[]
+> {
+  const db = await getDB();
+  const all: (PersistedState & { id: string })[] = await db.getAll(STORE_NAME);
+  return all.map((r) => ({
+    id: r.id,
+    updatedAt: r.updatedAt ?? 0,
+    ...(r.deletedAt ? { deletedAt: r.deletedAt } : {}),
+  }));
+}
+
+/** 클라우드에서 받은 맵을 로컬에 그대로 기록한다 (updatedAt을 서버 값으로 유지) */
+export async function writeMapFromCloud(
+  record: PersistedState & { id: string }
+): Promise<void> {
+  const db = await getDB();
+  await db.put(STORE_NAME, record);
 }

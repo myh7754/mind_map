@@ -8,6 +8,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useMindMapStore, useUndoRedo } from './store/useMindMapStore';
 import { useAutosave } from './hooks/useAutosave';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import { useAuth } from './hooks/useAuth';
+import { syncNow } from './db/cloudSync';
 import { listMaps, loadMindMap } from './db/mindmapDB';
 
 // 마지막으로 열어둔 맵. 새로고침해도 보던 과목으로 돌아온다.
@@ -61,6 +63,32 @@ export default function App() {
   useEffect(() => {
     if (ready) localStorage.setItem(LAST_MAP_KEY, mindMapData.id);
   }, [mindMapData.id, ready]);
+
+  // 로그인하면 한 번 맞춘다. 로컬에만 있던 맵이 올라가고, 다른 기기 것이 내려온다.
+  const { session } = useAuth();
+  const userId = session?.user.id ?? null;
+  useEffect(() => {
+    if (!ready || !userId) return;
+    let cancelled = false;
+    syncNow()
+      .then(async (result) => {
+        if (cancelled || !result || (result.pulled === 0 && result.deletedLocal === 0)) return;
+        // 내려받은 게 있으면 지금 보고 있는 맵을 새로 읽어 화면에 반영한다
+        const store = useMindMapStore.getState();
+        const maps = await listMaps();
+        const current = maps.find((m) => m.id === store.mindMapData.id) ?? maps[0];
+        if (!current) return;
+        const persisted = await loadMindMap(current.id);
+        if (persisted && !cancelled) store.openMap(persisted.mindMapData, persisted.positions);
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        useMindMapStore.getState().setSaveStatus('error', `동기화 실패: ${message}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, ready]);
 
   useAutosave(mindMapData, positions, ready);
   useGlobalShortcuts(undo, redo);

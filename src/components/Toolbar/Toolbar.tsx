@@ -7,6 +7,7 @@ import { exportToPng } from '../../utils/exportImage';
 import { SaveStatus } from './SaveStatus';
 import { MapSwitcher } from './MapSwitcher';
 import { NodeStyleBar } from './NodeStyleBar';
+import { AccountMenu } from './AccountMenu';
 
 export function Toolbar() {
   const {
@@ -131,6 +132,7 @@ export function Toolbar() {
       </span>
 
       <SaveStatus />
+      <AccountMenu />
 
       <div className="w-px h-5 bg-slate-700 mx-1" />
 
