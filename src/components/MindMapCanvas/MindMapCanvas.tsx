@@ -55,8 +55,9 @@ function Flow() {
     syncRfFromData,
     mindMapData,
     focusRequest,
+    fitRequest,
   } = useMindMapStore();
-  const { getNodes, setCenter, getViewport } = useReactFlow();
+  const { getNodes, setCenter, getViewport, fitView } = useReactFlow();
   // ReactFlow 내부 스토어가 들고 있는 캔버스(pane) 실제 픽셀 크기
   const paneWidth = useStore((s) => s.width);
   const paneHeight = useStore((s) => s.height);
@@ -83,6 +84,15 @@ function Flow() {
     if (!focusRequest.center && visible) return;
     setCenter(node.position.x + w / 2, node.position.y + h / 2, { zoom, duration: 250 });
   }, [focusRequest, getNodes, getViewport, setCenter, paneWidth, paneHeight]);
+
+  // 맵을 새로 열거나 전체 펼침/접힘 후 화면을 맵에 맞춘다.
+  // 초기값 0은 건너뛴다 — ReactFlow의 fitView prop이 최초 1회를 이미 처리한다.
+  useEffect(() => {
+    if (!fitRequest) return;
+    // 배치가 끝난 뒤에 재야 노드 크기가 반영된 범위로 맞춰진다
+    const t = setTimeout(() => fitView({ padding: 0.3, duration: 250 }), 60);
+    return () => clearTimeout(t);
+  }, [fitRequest, fitView]);
 
   // 드래그 중인 노드 + 드롭 결정(부모/삽입 인덱스). 렌더(슬롯·간선)에 사용.
   const [draggingId, setDraggingId] = useState<string | null>(null);

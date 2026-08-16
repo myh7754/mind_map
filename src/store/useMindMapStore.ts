@@ -204,6 +204,8 @@ interface MindMapStoreState {
   // 값이 바뀌게 해서 useEffect가 매번 발화하도록 하는 토큰이다.
   // center=true면 무조건 화면 중앙으로, false면 화면 밖일 때만 따라간다.
   focusRequest: { id: string; seq: number; center: boolean } | null;
+  /** 증가할 때마다 캔버스가 fitView 한다. 맵을 새로 열거나 전체 펼침/접힘 후. */
+  fitRequest: number;
   isSearchOpen: boolean;
   // 자동 저장 상태. 실패를 조용히 넘기지 않고 화면에 드러내기 위한 것.
   saveStatus: SaveStatus;
@@ -224,6 +226,9 @@ interface MindMapStoreActions {
   reparentNode: (nodeId: string, newParentId: string) => void;
   moveNode: (nodeId: string, newParentId: string, index: number) => void;
   toggleCollapse: (id: string) => void;
+  // 모두 펼치기(false) / 모두 접기(true). 루트는 접지 않는다.
+  setAllCollapsed: (collapsed: boolean) => void;
+  requestFitView: () => void;
   updateNodeNote: (id: string, note: string) => void;
   updateNodeTableData: (id: string, tableData: NonNullable<MindNode['tableData']>) => void;
   setSelectedNodeId: (id: string | null) => void;
@@ -271,6 +276,7 @@ export const useMindMapStore = create<MindMapStore>()(
       isNoteDrawerOpen: false,
       noteDrawerWidth: 360,
       focusRequest: null,
+      fitRequest: 0,
       isSearchOpen: false,
       saveStatus: 'idle',
       saveError: null,
@@ -417,7 +423,34 @@ export const useMindMapStore = create<MindMapStore>()(
         };
         // 접거나 펴면 보이는 노드 집합이 달라지므로 다시 배치해 빈 자리를 메운다
         set({ mindMapData: newData, ...project(newData, positions, selectedNodeId, rfNodes, true) });
+        // 재배치로 방금 누른 노드가 화면 밖으로 밀려나면 따라간다.
+        // (center=false 라 화면 안에 남아 있으면 화면이 움직이지 않는다)
+        get().focusNode(id);
       },
+
+      /**
+       * 모두 펼치기 / 모두 접기.
+       * 접을 때 루트는 제외한다 — 루트까지 접으면 노드 하나만 남아 맵이 사라진 것처럼 보인다.
+       */
+      setAllCollapsed: (collapsed) => {
+        const { mindMapData, positions, selectedNodeId, rfNodes } = get();
+        const newNodes: Record<string, MindNode> = {};
+        let changed = false;
+        for (const [nodeId, node] of Object.entries(mindMapData.nodes)) {
+          const hasKids = (mindMapData.children[nodeId] ?? []).length > 0;
+          const next = collapsed && hasKids && nodeId !== mindMapData.rootId;
+          if (node.collapsed !== next) changed = true;
+          newNodes[nodeId] = node.collapsed === next ? node : { ...node, collapsed: next };
+        }
+        if (!changed) return;
+        const newData = { ...mindMapData, nodes: newNodes };
+        set({ mindMapData: newData, ...project(newData, positions, selectedNodeId, rfNodes, true) });
+        get().requestFitView();
+      },
+
+      /** 화면을 맵 전체에 맞춰달라고 캔버스에 요청한다 (실제 fitView는 MindMapCanvas가 한다) */
+      requestFitView: () =>
+        set((state) => ({ fitRequest: (state.fitRequest ?? 0) + 1 })),
 
       updateNodeNote: (id, note) => {
         const { mindMapData, positions, selectedNodeId, rfNodes } = get();
@@ -626,6 +659,8 @@ export const useMindMapStore = create<MindMapStore>()(
         });
         // undo가 이전 맵으로 되돌아가면 안 된다
         useMindMapStore.temporal.getState().clear();
+        // 이전 맵의 배율·위치가 그대로 남으면 다른 맵을 열었을 때 엉뚱한 데를 보고 있게 된다
+        get().requestFitView();
       },
 
       // undo/redo는 mindMapData/positions만 복원하므로, 파생 상태인

@@ -19,6 +19,7 @@ export function Toolbar() {
     loadFromPersisted,
     openMap,
     setSearchOpen,
+    setAllCollapsed,
   } = useMindMapStore();
   const { undo, redo, canUndo, canRedo } = useUndoRedo();
 
@@ -123,6 +124,20 @@ export function Toolbar() {
         title="노드·노트 검색 (Ctrl+F)"
       >
         🔍 검색
+      </button>
+      <button
+        className="px-2 py-1.5 rounded text-xs bg-slate-700 text-slate-300 hover:bg-slate-600"
+        onClick={() => setAllCollapsed(false)}
+        title="모든 가지 펼치기"
+      >
+        ⊕ 모두 펼치기
+      </button>
+      <button
+        className="px-2 py-1.5 rounded text-xs bg-slate-700 text-slate-300 hover:bg-slate-600"
+        onClick={() => setAllCollapsed(true)}
+        title="모든 가지 접기 (루트는 유지)"
+      >
+        ⊖ 모두 접기
       </button>
 
       <div className="w-px h-5 bg-slate-700 mx-1" />
