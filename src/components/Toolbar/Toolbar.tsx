@@ -124,8 +124,9 @@ export function Toolbar() {
 
       <div className="flex-1" />
 
-      {/* 폭을 많이 먹어서 아주 넓은 화면에서만 보인다 (좁으면 툴바가 잘린다) */}
-      <span className="text-[10px] text-slate-600 mr-2 hidden 2xl:inline">
+      {/* 폭을 많이 먹는다. 2xl(1536px)로는 부족해서 — 딱 1536 화면에서 툴바가 잘렸다 —
+          나머지 버튼이 다 들어가고도 남는 1800px 이상에서만 보인다. */}
+      <span className="text-[10px] text-slate-600 mr-2 hidden min-[1800px]:inline">
         Tab 자식 · Enter 형제 · F2 편집 · ←↑↓→ 이동 · Space 접기
       </span>
 
