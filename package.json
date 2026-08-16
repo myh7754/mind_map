@@ -23,6 +23,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "@xyflow/react": "^12.10.2",
     "file-saver": "^2.0.5",
+    "html-to-image": "^1.11.13",
     "idb": "^8.0.3",
     "nanoid": "^5.1.11",
     "react": "^19.2.6",

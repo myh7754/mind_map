@@ -159,7 +159,8 @@ function buildReactFlow(
         source: parentId,
         target: childId,
         type: 'bezierEdge',
-        data: { depth: depth.get(parentId) ?? 0 },
+        // 간선 색은 자식 노드 색을 따라간다 → 가지에 색을 칠하면 선까지 한 테마
+        data: { depth: depth.get(parentId) ?? 0, color: nodes[childId]?.style?.color },
         hidden: hiddenIds.has(childId),
       });
     }
@@ -244,6 +245,9 @@ interface MindMapStoreActions {
   loadFromPersisted: (mindMapData: MindMapData, positions: Positions) => void;
   syncRfFromData: () => void;
   // 맵 제목 변경 (과목 이름). 내보내기 파일명과 맵 목록에 쓰인다.
+  // 노드 색 지정. color=null이면 기본색으로 되돌린다.
+  // includeSubtree면 후손까지 함께 칠해 가지 전체를 한 테마로 만든다.
+  setNodeColor: (id: string, color: string | null, includeSubtree?: boolean) => void;
   setMapTitle: (title: string) => void;
   // 다른 맵으로 갈아탄다. undo 히스토리는 맵 경계를 넘지 않아야 하므로 함께 비운다.
   openMap: (mindMapData: MindMapData, positions: Positions) => void;
@@ -584,6 +588,26 @@ export const useMindMapStore = create<MindMapStore>()(
       loadFromPersisted: (mindMapData, positions) => {
         // 다른 맵을 불러오는 것이므로 이전 노드의 실측 크기는 물려받지 않는다
         set({ mindMapData, ...project(mindMapData, positions, get().selectedNodeId, [], false) });
+      },
+
+      setNodeColor: (id, color, includeSubtree = false) => {
+        const { mindMapData, positions, selectedNodeId, rfNodes } = get();
+        if (!mindMapData.nodes[id]) return;
+
+        const targets = includeSubtree
+          ? collectSubtree(id, mindMapData.children)
+          : new Set([id]);
+
+        const newNodes = { ...mindMapData.nodes };
+        for (const targetId of targets) {
+          const node = newNodes[targetId];
+          if (!node) continue;
+          newNodes[targetId] = { ...node, style: color ? { ...node.style, color } : undefined };
+        }
+
+        const newData = { ...mindMapData, nodes: newNodes };
+        // 색은 크기를 바꾸지 않으므로 재배치는 불필요
+        set({ mindMapData: newData, ...project(newData, positions, selectedNodeId, rfNodes, false) });
       },
 
       setMapTitle: (title) =>

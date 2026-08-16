@@ -23,6 +23,8 @@ export interface MindNode extends Record<string, unknown> {
 export interface MindEdgeData extends Record<string, unknown> {
   depth: number;
   preview?: boolean;
+  // 자식 노드의 색. 지정되면 간선도 그 색을 따라가 가지 전체가 한 테마로 보인다.
+  color?: string;
 }
 
 export interface MindMapData {

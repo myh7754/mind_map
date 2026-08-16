@@ -2,12 +2,23 @@ import { useMindMapStore, useUndoRedo } from '../../store/useMindMapStore';
 import { exportToMarkdown } from '../../utils/exportMarkdown';
 import { downloadJson, loadJsonFile } from '../../utils/exportJson';
 import { saveAs } from 'file-saver';
+import { importFromMarkdown, pickTextFile } from '../../utils/importMarkdown';
+import { exportToPng } from '../../utils/exportImage';
 import { SaveStatus } from './SaveStatus';
 import { MapSwitcher } from './MapSwitcher';
+import { NodeStyleBar } from './NodeStyleBar';
 
 export function Toolbar() {
-  const { mindMapData, selectedNodeId, addChildNode, applyLayout, loadFromPersisted, setSearchOpen } =
-    useMindMapStore();
+  const {
+    mindMapData,
+    rfNodes,
+    selectedNodeId,
+    addChildNode,
+    applyLayout,
+    loadFromPersisted,
+    openMap,
+    setSearchOpen,
+  } = useMindMapStore();
   const { undo, redo, canUndo, canRedo } = useUndoRedo();
 
   const handleExportMarkdown = () => {
@@ -23,6 +34,25 @@ export function Toolbar() {
       const data = await loadJsonFile();
       loadFromPersisted(data, {});
       setTimeout(applyLayout, 50);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+
+  // 가져온 마크다운은 새 맵으로 연다 (지금 보던 과목을 덮어쓰지 않는다)
+  const handleImportMarkdown = async () => {
+    try {
+      const { name, text } = await pickTextFile('.md,.markdown,.txt');
+      const fallback = name.replace(/\.(md|markdown|txt)$/i, '');
+      openMap(importFromMarkdown(text, fallback), {});
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+
+  const handleExportPng = async () => {
+    try {
+      await exportToPng(rfNodes, mindMapData.title);
     } catch (e) {
       alert((e as Error).message);
     }
@@ -87,6 +117,9 @@ export function Toolbar() {
         🔍 검색
       </button>
 
+      <div className="w-px h-5 bg-slate-700 mx-1" />
+      <NodeStyleBar />
+
       <div className="flex-1" />
 
       <span className="text-[10px] text-slate-600 mr-2 hidden xl:inline">
@@ -110,10 +143,24 @@ export function Toolbar() {
         💾 JSON 저장
       </button>
       <button
+        className="px-2 py-1.5 rounded text-xs bg-slate-700 text-slate-300 hover:bg-slate-600"
+        onClick={handleImportMarkdown}
+        title="마크다운 아웃라인을 새 맵으로 가져오기"
+      >
+        📥 MD 가져오기
+      </button>
+      <button
         className="px-3 py-1.5 rounded text-xs bg-emerald-700 text-white hover:bg-emerald-600"
         onClick={handleExportMarkdown}
       >
         ↓ MD 내보내기
+      </button>
+      <button
+        className="px-3 py-1.5 rounded text-xs bg-emerald-800 text-white hover:bg-emerald-700"
+        onClick={handleExportPng}
+        title="보이는 노드 전체를 PNG로 저장"
+      >
+        🖼 PNG
       </button>
     </div>
   );
