@@ -59,7 +59,9 @@ export function Toolbar() {
   };
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-slate-900 border-b border-slate-700 flex-shrink-0">
+    // 버튼이 많아 좁은 화면에서 글자가 단어 중간에 줄바꿈되던 것을 막는다.
+    // 줄바꿈 대신 가로 스크롤로 넘긴다. ([&>*]:shrink-0 = 자식들이 찌그러지지 않게)
+    <div className="flex items-center gap-2 px-4 py-2 bg-slate-900 border-b border-slate-700 flex-shrink-0 whitespace-nowrap overflow-x-auto [&>*]:shrink-0">
       <span className="text-indigo-400 font-semibold text-sm">🗺</span>
       <MapSwitcher />
       <div className="w-px h-5 bg-slate-700 mx-1" />
