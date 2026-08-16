@@ -124,7 +124,8 @@ export function Toolbar() {
 
       <div className="flex-1" />
 
-      <span className="text-[10px] text-slate-600 mr-2 hidden xl:inline">
+      {/* 폭을 많이 먹어서 아주 넓은 화면에서만 보인다 (좁으면 툴바가 잘린다) */}
+      <span className="text-[10px] text-slate-600 mr-2 hidden 2xl:inline">
         Tab 자식 · Enter 형제 · F2 편집 · ←↑↓→ 이동 · Space 접기
       </span>
 
