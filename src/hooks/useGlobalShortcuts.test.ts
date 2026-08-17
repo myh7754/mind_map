@@ -9,12 +9,13 @@ import { useMindMapStore } from '../store/useMindMapStore';
  */
 function keyEvent(
   key: string,
-  opts: { ctrlKey?: boolean; metaKey?: boolean; target?: EventTarget } = {}
+  opts: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; target?: EventTarget } = {}
 ): KeyboardEvent {
   const e = new KeyboardEvent('keydown', {
     key,
     ctrlKey: opts.ctrlKey ?? false,
     metaKey: opts.metaKey ?? false,
+    shiftKey: opts.shiftKey ?? false,
     cancelable: true,
   });
   if (opts.target) {
@@ -51,6 +52,7 @@ describe('handleShortcut', () => {
     store().setSelectedNodeId(null);
     store().setEditingNodeId(null);
     store().setSearchOpen(false);
+    store().setShortcutsOpen(false);
     store().applyLayout();
     useMindMapStore.temporal.getState().clear();
   });
@@ -128,6 +130,83 @@ describe('handleShortcut', () => {
     expect(undo).toHaveBeenCalledTimes(1);
     handleShortcut(keyEvent('y', { ctrlKey: true }), undo, redo);
     expect(redo).toHaveBeenCalledTimes(1);
+  });
+
+  describe('단축키 도움말', () => {
+    it('?는 도움말을 연다', () => {
+      handleShortcut(keyEvent('?', { shiftKey: true }), undo, redo);
+      expect(store().isShortcutsOpen).toBe(true);
+    });
+
+    it('Escape는 도움말을 닫는다', () => {
+      store().setShortcutsOpen(true);
+      handleShortcut(keyEvent('Escape'), undo, redo);
+      expect(store().isShortcutsOpen).toBe(false);
+    });
+
+    it('도움말이 열려 있으면 Escape가 검색보다 도움말을 먼저 닫는다', () => {
+      store().setSearchOpen(true);
+      store().setShortcutsOpen(true);
+
+      handleShortcut(keyEvent('Escape'), undo, redo);
+
+      expect(store().isShortcutsOpen).toBe(false);
+      expect(store().isSearchOpen).toBe(true); // 검색은 아직 열려 있어야 한다
+    });
+
+    it('입력 중에는 ?가 도움말을 열지 않는다 (물음표를 타이핑한 것)', () => {
+      const input = document.createElement('input');
+      document.body.appendChild(input);
+      handleShortcut(keyEvent('?', { shiftKey: true, target: input }), undo, redo);
+      expect(store().isShortcutsOpen).toBe(false);
+    });
+  });
+
+  // 트리: root → a, b ; a → a1  (자식이 있는 건 root 와 a)
+  describe('펼치기 / 접기 단축키', () => {
+    const collapsedIds = () =>
+      Object.values(store().mindMapData.nodes)
+        .filter((n) => n.collapsed)
+        .map((n) => n.id)
+        .sort();
+
+    it('Ctrl+Shift+E는 모두 접는다', () => {
+      handleShortcut(keyEvent('E', { ctrlKey: true, shiftKey: true }), undo, redo);
+      expect(collapsedIds()).toEqual(['a']);
+    });
+
+    it('Ctrl+E는 모두 펼친다', () => {
+      store().setAllCollapsed(true);
+      handleShortcut(keyEvent('e', { ctrlKey: true }), undo, redo);
+      expect(collapsedIds()).toEqual([]);
+    });
+
+    it('Ctrl+1은 1단계까지만 펼친다', () => {
+      handleShortcut(keyEvent('1', { ctrlKey: true }), undo, redo);
+      expect(store().mindMapData.nodes.a.collapsed).toBe(true);
+    });
+
+    it('Ctrl+2는 2단계까지 펼친다', () => {
+      store().setAllCollapsed(true);
+      handleShortcut(keyEvent('2', { ctrlKey: true }), undo, redo);
+      expect(store().mindMapData.nodes.a.collapsed).toBe(false);
+    });
+
+    it('Ctrl+5 이상은 무시한다 (단계 단축키는 1~4)', () => {
+      store().setAllCollapsed(true);
+      handleShortcut(keyEvent('5', { ctrlKey: true }), undo, redo);
+      expect(store().mindMapData.nodes.a.collapsed).toBe(true); // 그대로
+    });
+
+    it('입력 중에는 Ctrl+E가 동작하지 않는다 (노트 쓰다가 맵이 접히면 안 된다)', () => {
+      const input = document.createElement('input');
+      document.body.appendChild(input);
+      store().setAllCollapsed(true);
+
+      handleShortcut(keyEvent('e', { ctrlKey: true, target: input }), undo, redo);
+
+      expect(collapsedIds()).toEqual(['a']); // 펼쳐지지 않았다
+    });
   });
 
   describe('입력 필드 안에서', () => {

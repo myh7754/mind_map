@@ -207,6 +207,8 @@ interface MindMapStoreState {
   /** 증가할 때마다 캔버스가 fitView 한다. 맵을 새로 열거나 전체 펼침/접힘 후. */
   fitRequest: number;
   isSearchOpen: boolean;
+  /** 단축키 도움말 모달. 기능이 있어도 못 찾으면 없는 것과 같아서 둔다. */
+  isShortcutsOpen: boolean;
   // 자동 저장 상태. 실패를 조용히 넘기지 않고 화면에 드러내기 위한 것.
   saveStatus: SaveStatus;
   saveError: string | null;
@@ -228,6 +230,8 @@ interface MindMapStoreActions {
   toggleCollapse: (id: string) => void;
   // 모두 펼치기(false) / 모두 접기(true). 루트는 접지 않는다.
   setAllCollapsed: (collapsed: boolean) => void;
+  // 그 깊이까지만 펼친다. 루트가 0단계이므로 expandToLevel(1)이면 루트의 자식까지 보인다.
+  expandToLevel: (depth: number) => void;
   requestFitView: () => void;
   updateNodeNote: (id: string, note: string) => void;
   updateNodeTableData: (id: string, tableData: NonNullable<MindNode['tableData']>) => void;
@@ -239,6 +243,7 @@ interface MindMapStoreActions {
   revealNode: (id: string) => void;
   focusNode: (id: string, center?: boolean) => void;
   setSearchOpen: (open: boolean) => void;
+  setShortcutsOpen: (open: boolean) => void;
   setSaveStatus: (status: SaveStatus, error?: string | null, savedAt?: number) => void;
   setExternalChange: (value: boolean) => void;
   openNoteDrawer: (nodeId: string) => void;
@@ -278,6 +283,7 @@ export const useMindMapStore = create<MindMapStore>()(
       focusRequest: null,
       fitRequest: 0,
       isSearchOpen: false,
+      isShortcutsOpen: false,
       saveStatus: 'idle',
       saveError: null,
       lastSavedAt: null,
@@ -448,6 +454,33 @@ export const useMindMapStore = create<MindMapStore>()(
         get().requestFitView();
       },
 
+      /**
+       * 그 깊이까지만 펼친다 (루트=0단계).
+       *
+       * "전체를 펼치면 너무 많고 다 접으면 너무 적다"를 푸는 것이 목적이다.
+       * 217노드짜리 맵에서 1단계는 주제 목록, 2단계는 주제+분류가 된다.
+       * 잎 노드는 접어봐야 보이는 게 같으므로 건드리지 않는다 — 그래야
+       * 나중에 자식이 생겼을 때 갑자기 접힌 채로 나타나지 않는다.
+       */
+      expandToLevel: (depth) => {
+        const { mindMapData, positions, selectedNodeId, rfNodes } = get();
+        const { depth: depthOf } = buildTreeIndex(mindMapData.rootId, mindMapData.children);
+        const newNodes: Record<string, MindNode> = {};
+        let changed = false;
+        for (const [nodeId, node] of Object.entries(mindMapData.nodes)) {
+          const hasKids = (mindMapData.children[nodeId] ?? []).length > 0;
+          // 트리에 매달려 있지 않은 노드는 깊이를 알 수 없다 — 건드리지 않는다.
+          const d = depthOf.get(nodeId);
+          const next = hasKids && d !== undefined && d >= depth;
+          if (node.collapsed !== next) changed = true;
+          newNodes[nodeId] = node.collapsed === next ? node : { ...node, collapsed: next };
+        }
+        if (!changed) return;
+        const newData = { ...mindMapData, nodes: newNodes };
+        set({ mindMapData: newData, ...project(newData, positions, selectedNodeId, rfNodes, true) });
+        get().requestFitView();
+      },
+
       /** 화면을 맵 전체에 맞춰달라고 캔버스에 요청한다 (실제 fitView는 MindMapCanvas가 한다) */
       requestFitView: () =>
         set((state) => ({ fitRequest: (state.fitRequest ?? 0) + 1 })),
@@ -553,6 +586,8 @@ export const useMindMapStore = create<MindMapStore>()(
         })),
 
       setSearchOpen: (open) => set({ isSearchOpen: open }),
+
+      setShortcutsOpen: (open) => set({ isShortcutsOpen: open }),
 
       setSaveStatus: (status, error = null, savedAt) =>
         set((state) => ({
