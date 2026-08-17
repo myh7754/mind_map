@@ -26,7 +26,7 @@ export function ShortcutsHelp() {
       <div
         role="dialog"
         aria-label="단축키"
-        className="relative w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl"
+        className="relative w-full max-w-3xl max-h-[80vh] overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 shadow-2xl"
       >
         <div className="sticky top-0 flex items-center justify-between px-5 py-3 border-b border-slate-700 bg-slate-900">
           <h2 className="text-sm font-semibold text-slate-100">⌨ 단축키</h2>
@@ -45,17 +45,17 @@ export function ShortcutsHelp() {
               <h3 className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">
                 {group.title}
               </h3>
+              {/* 키를 고정폭 열에 두어 설명의 왼쪽 끝을 맞춘다.
+                  설명을 오른쪽 정렬하면 줄마다 시작점이 달라져 훑어읽기가 어렵다. */}
               <dl className="space-y-1.5">
                 {group.items.map((item) => (
-                  <div key={item.desc} className="flex items-baseline justify-between gap-3">
-                    <dd className="text-xs text-slate-300 order-2 text-right flex-1">
-                      {item.desc}
-                    </dd>
-                    <dt className="order-1 shrink-0">
-                      <kbd className="px-1.5 py-0.5 rounded border border-slate-600 bg-slate-800 text-[11px] font-mono text-slate-200 whitespace-nowrap">
+                  <div key={item.desc} className="flex items-baseline gap-3">
+                    <dt className="shrink-0 w-[8.5rem]">
+                      <kbd className="inline-block px-1.5 py-0.5 rounded border border-slate-600 bg-slate-800 text-[11px] font-mono text-slate-200 whitespace-nowrap">
                         {item.keys}
                       </kbd>
                     </dt>
+                    <dd className="text-xs text-slate-300 leading-relaxed">{item.desc}</dd>
                   </div>
                 ))}
               </dl>
@@ -63,7 +63,7 @@ export function ShortcutsHelp() {
           ))}
         </div>
 
-        <div className="px-5 py-2.5 border-t border-slate-800 text-[10px] text-slate-600">
+        <div className="px-5 py-2.5 border-t border-slate-800 text-[10px] text-slate-500">
           Esc 또는 바깥을 눌러 닫기
         </div>
       </div>

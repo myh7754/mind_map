@@ -20,27 +20,28 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: '노드 만들기',
     items: [
-      { keys: 'Tab', desc: '선택한 노드 아래에 자식 추가' },
-      { keys: 'Enter', desc: '같은 단계에 형제 추가' },
+      { keys: 'Tab', desc: '자식 노드 추가' },
+      { keys: 'Enter', desc: '형제 노드 추가' },
       { keys: 'F2', desc: '이름 고치기' },
-      { keys: 'Delete', desc: '선택한 노드 삭제' },
+      { keys: 'Delete', desc: '노드 삭제' },
     ],
   },
   {
     title: '보기',
     items: [
-      { keys: 'Space', desc: '선택한 가지만 접기 / 펼치기' },
+      { keys: 'Space', desc: '가지 접기 / 펼치기' },
+      // 이 두 문구는 ViewMenu가 keysFor()로 찾아 쓴다 — 바꾸면 메뉴의 단축키 표시가 사라진다
       { keys: 'Ctrl + E', desc: '모두 펼치기' },
       { keys: 'Ctrl + Shift + E', desc: '모두 접기' },
-      { keys: 'Ctrl + 1 ~ 4', desc: '그 단계까지만 펼치기' },
+      { keys: 'Ctrl + 1 ~ 4', desc: '그 단계까지만' },
     ],
   },
   {
     title: '이동 · 찾기',
     items: [
-      { keys: '← ↑ ↓ →', desc: '가지를 따라 선택 옮기기' },
-      { keys: 'Ctrl + F', desc: '노드와 노트 안까지 검색' },
-      { keys: '좌 + 우 버튼 드래그', desc: '화면 이동' },
+      { keys: '← ↑ ↓ →', desc: '선택 옮기기' },
+      { keys: 'Ctrl + F', desc: '노드 · 노트 검색' },
+      { keys: '좌 + 우 드래그', desc: '화면 이동' },
     ],
   },
   {
