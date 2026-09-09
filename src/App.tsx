@@ -4,6 +4,7 @@ import { Toolbar } from './components/Toolbar/Toolbar';
 import { NoteDrawer } from './components/NoteDrawer/NoteDrawer';
 import { SearchPanel } from './components/SearchPanel/SearchPanel';
 import { SyncBanner } from './components/SyncBanner/SyncBanner';
+import { ShortcutsHelp } from './components/ShortcutsHelp/ShortcutsHelp';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useMindMapStore, useUndoRedo } from './store/useMindMapStore';
 import { useAutosave } from './hooks/useAutosave';
@@ -104,6 +105,8 @@ export default function App() {
         <SearchPanel />
         <NoteDrawer />
       </div>
+      {/* 모달은 캔버스 컨테이너 밖에 둔다 — 안에 두면 overflow 클리핑에 걸린다 */}
+      <ShortcutsHelp />
     </div>
   );
 }

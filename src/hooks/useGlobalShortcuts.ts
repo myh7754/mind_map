@@ -35,18 +35,34 @@ export function handleShortcut(
       store.setSearchOpen(true);
       return;
     }
-    if (inField) return; // 입력 중에는 자체 undo에 맡긴다
+    if (inField) return; // 입력 중에는 자체 undo에 맡긴다 (아래 보기 단축키도 같이 막힌다)
     if (e.key === 'z') {
       e.preventDefault();
       undo();
     } else if (e.key === 'y') {
       e.preventDefault();
       redo();
+    } else if (e.key === 'e' || e.key === 'E') {
+      // Ctrl+E 모두 펼치기 / Ctrl+Shift+E 모두 접기.
+      // Shift가 눌리면 key가 'E'로 올라오므로 두 경우를 다 받는다.
+      e.preventDefault();
+      store.setAllCollapsed(e.shiftKey);
+    } else if (e.key >= '1' && e.key <= '4') {
+      // Ctrl+1~4 = 그 단계까지만 펼치기. 5 이상은 "전체 펼치기"(Ctrl+E)와 사실상
+      // 같아지므로 넣지 않는다 — 손가락이 닿는 범위만 준다.
+      e.preventDefault();
+      store.expandToLevel(Number(e.key));
     }
     return;
   }
 
-  // Escape는 입력 중에도 처리해야 한다 (검색창 닫기)
+  // Escape는 입력 중에도 처리해야 한다. 겹쳐 떠 있을 때는 위에 있는 것부터 닫는다:
+  // 도움말 모달 → 검색창 → 선택 해제.
+  if (e.key === 'Escape' && store.isShortcutsOpen) {
+    e.preventDefault();
+    store.setShortcutsOpen(false);
+    return;
+  }
   if (e.key === 'Escape' && store.isSearchOpen) {
     e.preventDefault();
     store.setSearchOpen(false);
@@ -54,6 +70,13 @@ export function handleShortcut(
   }
 
   if (inField) return; // 라벨/노트/검색 입력 중에는 노드 단축키 무시
+
+  // ? = 단축키 도움말. inField 뒤에 두어야 노트에 물음표를 칠 수 있다.
+  if (e.key === '?') {
+    e.preventDefault();
+    store.setShortcutsOpen(true);
+    return;
+  }
 
   const sel = store.selectedNodeId;
 

@@ -2,13 +2,23 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { useMindMapStore } from './useMindMapStore';
 
 /**
- * 모두 펼치기 / 모두 접기.
- * 트리: root → a, b ; a → a1, a2   (자식이 있는 건 root 와 a 뿐)
+ * 모두 펼치기 / 모두 접기 / 단계별 펼치기.
+ * 트리: root → a, b ; a → a1, a2 ; a1 → a1x
+ * 깊이:  root=0 · a,b=1 · a1,a2=2 · a1x=3
+ * 자식이 있는 건 root, a, a1 셋.
  */
 const nodes = () => useMindMapStore.getState().mindMapData.nodes;
 const collapsedIds = () =>
   Object.values(nodes())
     .filter((n) => n.collapsed)
+    .map((n) => n.id)
+    .sort();
+
+/** 화면에 실제로 그려지는 노드 (접힌 조상 때문에 숨은 것 제외) */
+const visibleIds = () =>
+  useMindMapStore
+    .getState()
+    .rfNodes.filter((n) => !n.hidden)
     .map((n) => n.id)
     .sort();
 
@@ -19,13 +29,14 @@ beforeEach(() => {
       id: 'test',
       title: 't',
       rootId: 'root',
-      children: { root: ['a', 'b'], a: ['a1', 'a2'], b: [], a1: [], a2: [] },
+      children: { root: ['a', 'b'], a: ['a1', 'a2'], b: [], a1: ['a1x'], a2: [], a1x: [] },
       nodes: {
         root: { id: 'root', type: 'text', label: 'root', note: '', collapsed: false },
         a: { id: 'a', type: 'text', label: 'a', note: '', collapsed: false },
         b: { id: 'b', type: 'text', label: 'b', note: '', collapsed: false },
         a1: { id: 'a1', type: 'text', label: 'a1', note: '', collapsed: false },
         a2: { id: 'a2', type: 'text', label: 'a2', note: '', collapsed: false },
+        a1x: { id: 'a1x', type: 'text', label: 'a1x', note: '', collapsed: false },
       },
     },
     {}
@@ -33,11 +44,49 @@ beforeEach(() => {
   useMindMapStore.getState().applyLayout();
 });
 
+describe('expandToLevel', () => {
+  it('1단계 = 루트와 그 자식까지만 보인다', () => {
+    useMindMapStore.getState().expandToLevel(1);
+    expect(visibleIds()).toEqual(['a', 'b', 'root']);
+  });
+
+  it('2단계 = 손자까지 보인다', () => {
+    useMindMapStore.getState().expandToLevel(2);
+    expect(visibleIds()).toEqual(['a', 'a1', 'a2', 'b', 'root']);
+  });
+
+  it('깊이가 부족하면 트리 전체가 펼쳐진다 (접힌 게 남지 않는다)', () => {
+    useMindMapStore.getState().setAllCollapsed(true);
+    useMindMapStore.getState().expandToLevel(9);
+    expect(collapsedIds()).toEqual([]);
+  });
+
+  it('이미 접혀 있던 것도 단계에 맞게 다시 펼친다', () => {
+    useMindMapStore.getState().setAllCollapsed(true); // a, a1 접힘
+    useMindMapStore.getState().expandToLevel(2);
+    // a는 깊이1이라 펼쳐지고, a1은 깊이2라 접힌 채로
+    expect(nodes().a.collapsed).toBe(false);
+    expect(nodes().a1.collapsed).toBe(true);
+  });
+
+  it('잎 노드는 접지 않는다 (접을 자식이 없다)', () => {
+    useMindMapStore.getState().expandToLevel(1);
+    expect(nodes().b.collapsed).toBe(false);
+    expect(nodes().a1x.collapsed).toBe(false);
+  });
+
+  it('화면을 맞춰달라고 요청한다', () => {
+    const before = useMindMapStore.getState().fitRequest;
+    useMindMapStore.getState().expandToLevel(1);
+    expect(useMindMapStore.getState().fitRequest).toBe(before + 1);
+  });
+});
+
 describe('setAllCollapsed', () => {
   it('모두 접으면 자식 있는 노드만 접힌다', () => {
     useMindMapStore.getState().setAllCollapsed(true);
-    // a 만. root 는 제외, 잎(b/a1/a2)은 접을 게 없다
-    expect(collapsedIds()).toEqual(['a']);
+    // a, a1 만. root 는 제외, 잎(b/a2/a1x)은 접을 게 없다
+    expect(collapsedIds()).toEqual(['a', 'a1']);
   });
 
   it('루트는 접지 않는다 — 접으면 맵이 사라진 것처럼 보인다', () => {
