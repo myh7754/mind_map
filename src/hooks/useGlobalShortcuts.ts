@@ -36,6 +36,7 @@ export function handleShortcut(
       return;
     }
     if (inField) return; // 입력 중에는 자체 undo에 맡긴다 (아래 보기 단축키도 같이 막힌다)
+    if (store.readOnly && (e.key === 'z' || e.key === 'y')) return;
     if (e.key === 'z') {
       e.preventDefault();
       undo();
@@ -79,6 +80,9 @@ export function handleShortcut(
   }
 
   const sel = store.selectedNodeId;
+
+  // 읽기전용에서는 생성·편집 키만 막는다. 탐색(방향키)·접기(Space)·검색은 살린다.
+  if (store.readOnly && (e.key === 'Tab' || e.key === 'Enter' || e.key === 'F2')) return;
 
   // Tab = 자식 추가, Enter = 형제 추가 (둘 다 만든 뒤 곧바로 편집 모드)
   if (e.key === 'Tab') {

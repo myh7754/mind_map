@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { handleShortcut } from './useGlobalShortcuts';
 import { useMindMapStore } from '../store/useMindMapStore';
 
@@ -206,6 +206,43 @@ describe('handleShortcut', () => {
       handleShortcut(keyEvent('e', { ctrlKey: true, target: input }), undo, redo);
 
       expect(collapsedIds()).toEqual(['a']); // 펼쳐지지 않았다
+    });
+  });
+
+  // 비로그인 방문자가 남의 맵을 볼 때. 가드가 좁으면 편집이 새고, 넓으면 탐색이 죽는다.
+  describe('읽기전용', () => {
+    beforeEach(() => {
+      useMindMapStore.setState({ readOnly: true });
+      store().setSelectedNodeId('a');
+    });
+    afterEach(() => {
+      useMindMapStore.setState({ readOnly: false });
+    });
+
+    it('Tab·Enter·F2는 노드를 만들거나 편집 모드로 넣지 않는다', () => {
+      const before = Object.keys(store().mindMapData.nodes).length;
+      handleShortcut(keyEvent('Tab'), undo, redo);
+      handleShortcut(keyEvent('Enter'), undo, redo);
+      handleShortcut(keyEvent('F2'), undo, redo);
+      expect(Object.keys(store().mindMapData.nodes).length).toBe(before);
+      expect(store().editingNodeId).toBeNull();
+    });
+
+    it('Ctrl+Z / Ctrl+Y는 무시한다', () => {
+      handleShortcut(keyEvent('z', { ctrlKey: true }), undo, redo);
+      handleShortcut(keyEvent('y', { ctrlKey: true }), undo, redo);
+      expect(undo).not.toHaveBeenCalled();
+      expect(redo).not.toHaveBeenCalled();
+    });
+
+    it('탐색·접기·검색은 그대로 동작한다', () => {
+      handleShortcut(keyEvent('ArrowDown'), undo, redo);
+      expect(store().selectedNodeId).toBe('b');
+      handleShortcut(keyEvent('ArrowUp'), undo, redo);
+      handleShortcut(keyEvent(' '), undo, redo);
+      expect(store().mindMapData.nodes.a.collapsed).toBe(true);
+      handleShortcut(keyEvent('f', { ctrlKey: true }), undo, redo);
+      expect(store().isSearchOpen).toBe(true);
     });
   });
 

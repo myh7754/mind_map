@@ -56,6 +56,7 @@ function Flow() {
     mindMapData,
     focusRequest,
     fitRequest,
+    readOnly,
   } = useMindMapStore();
   const { getNodes, setCenter, getViewport, fitView } = useReactFlow();
   // ReactFlow 내부 스토어가 들고 있는 캔버스(pane) 실제 픽셀 크기
@@ -302,15 +303,16 @@ function Flow() {
       minZoom={0.2}
       maxZoom={2}
       /* 노드 드래그 허용: 끌어서 다른 부모에 재배치. 놓으면 자동 정렬로 스냅백 */
-      nodesDraggable
+      nodesDraggable={!readOnly}
       /* 좌클릭 드래그(빈 곳) = 박스 선택 (여러 노드 선택) */
-      selectionOnDrag
+      selectionOnDrag={!readOnly}
       selectionMode={SelectionMode.Partial}
       selectionKeyCode={null}
-      /* 네이티브 단일버튼 팬은 끔. 화면 이동은 좌+우 동시 드래그(ChordPanController)로 처리 */
-      panOnDrag={false}
+      /* 네이티브 단일버튼 팬은 끔. 화면 이동은 좌+우 동시 드래그(ChordPanController)로 처리.
+         읽기전용은 끌어 옮길 것도 박스선택도 없으니 방문자에게 익숙한 좌드래그 팬을 준다. */
+      panOnDrag={readOnly}
       /* Delete/Backspace로 선택된 노드 삭제 */
-      deleteKeyCode={['Delete', 'Backspace']}
+      deleteKeyCode={readOnly ? null : ['Delete', 'Backspace']}
       /* ReactFlow 내장 키보드 네비(Tab 포커스/화살표 이동)는 끈다.
          Tab=자식추가, Enter=형제추가 단축키와 충돌하지 않도록. */
       disableKeyboardA11y

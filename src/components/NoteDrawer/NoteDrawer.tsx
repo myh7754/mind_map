@@ -19,6 +19,7 @@ export function NoteDrawer() {
     setNoteDrawerWidth,
     mindMapData,
     updateNodeNote,
+    readOnly,
   } = useMindMapStore();
 
   const selectedNode = selectedNodeId ? mindMapData.nodes[selectedNodeId] : null;
@@ -66,6 +67,7 @@ export function NoteDrawer() {
                   <BlockNoteEditor
                     nodeId={selectedNodeId}
                     note={note}
+                    editable={!readOnly}
                     onSave={(content) => updateNodeNote(selectedNodeId, content)}
                   />
                 </Suspense>

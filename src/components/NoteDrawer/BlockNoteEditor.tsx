@@ -6,6 +6,7 @@ import '@blocknote/mantine/style.css';
 interface BlockNoteEditorProps {
   nodeId: string | null;
   note: string;
+  editable?: boolean;
   onSave: (content: string) => void;
 }
 
@@ -19,7 +20,7 @@ function parseNoteBlocks(note: string): any[] {
   }
 }
 
-export function BlockNoteEditor({ nodeId, note, onSave }: BlockNoteEditorProps) {
+export function BlockNoteEditor({ nodeId, note, editable = true, onSave }: BlockNoteEditorProps) {
   const isProgrammaticUpdate = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -55,6 +56,7 @@ export function BlockNoteEditor({ nodeId, note, onSave }: BlockNoteEditorProps) 
       <BlockNoteView
         editor={editor}
         theme="dark"
+        editable={editable}
         onChange={handleChange}
         style={{ minHeight: '100%' }}
       />

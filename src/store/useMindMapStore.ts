@@ -215,6 +215,9 @@ interface MindMapStoreState {
   lastSavedAt: number | null;
   // 다른 탭이 같은 맵을 저장했을 때 세워지는 깃발. 사용자에게 알리고 선택을 맡긴다.
   hasExternalChange: boolean;
+  /** 비로그인 방문자가 공개 계정의 맵을 볼 때. 편집 UI·단축키만 끈다 —
+   *  진짜 방어는 뷰어가 저장 경로(useAutosave·syncNow)를 아예 마운트하지 않는 것이다. */
+  readOnly: boolean;
 }
 
 interface MindMapStoreActions {
@@ -288,6 +291,7 @@ export const useMindMapStore = create<MindMapStore>()(
       saveError: null,
       lastSavedAt: null,
       hasExternalChange: false,
+      readOnly: false,
 
       addChildNode: (parentId, type = 'text', index) => {
         const { mindMapData, positions, rfNodes } = get();

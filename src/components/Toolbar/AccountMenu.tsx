@@ -73,7 +73,7 @@ export function AccountMenu() {
             <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
             <div className="absolute top-full right-0 mt-1 z-40 w-56 rounded-lg border border-slate-700 bg-slate-900 shadow-xl p-2 space-y-1">
               <div className="text-[10px] text-slate-500 px-1 pb-1">
-                로그인하면 지금 이 브라우저의 맵이 클라우드로 올라가고, 다른 기기에서도 이어서
+                로그인하면 내 계정에 맵을 만들고 편집할 수 있습니다. 다른 기기에서도 이어서
                 볼 수 있습니다.
               </div>
               <button
