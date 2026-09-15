@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { MindMapNode } from '../../types';
 import { useMindMapStore } from '../../store/useMindMapStore';
 import { hasNoteContent } from '../../utils/noteText';
+import { NoteIconButton } from './NoteIconButton';
 
 export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps<MindMapNode>) {
   const [label, setLabel] = useState(data.label);
@@ -70,14 +71,12 @@ export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps
           hover 시 숨기지 않는 이유: 노드 폭이 바뀌면 실측 크기가 달라져 배치가 다시 계산된다
           (useMindMapStore의 onRfNodesChange). 마우스만 올려도 맵이 출렁이게 된다. */}
       {noted && (
-        <button
+        <NoteIconButton
+          note={data.note}
+          title={data.label}
           className="shrink-0 text-[11px] leading-none opacity-80 hover:opacity-100"
-          onClick={(e) => { e.stopPropagation(); openNoteDrawer(id); }}
-          title="노트 보기"
-          aria-label="노트 있음"
-        >
-          📝
-        </button>
+          onOpen={() => openNoteDrawer(id)}
+        />
       )}
 
       {/* 액션 버튼은 노드 '위에 떠서' 나온다 (absolute).

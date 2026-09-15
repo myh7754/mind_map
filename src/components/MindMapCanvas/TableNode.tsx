@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import type { MindMapNode } from '../../types';
 import { useMindMapStore } from '../../store/useMindMapStore';
 import { hasNoteContent } from '../../utils/noteText';
+import { NoteIconButton } from './NoteIconButton';
 
 export const TableNode = memo(function TableNode({ data, id, selected }: NodeProps<MindMapNode>) {
   const { updateNodeTableData, openNoteDrawer, deleteNode, readOnly } = useMindMapStore();
@@ -48,14 +49,12 @@ export const TableNode = memo(function TableNode({ data, id, selected }: NodePro
           📊 {data.label}
           {/* 내용이 있는 노트는 항상 표시 (TextNode와 동일한 규칙) */}
           {noted && (
-            <button
+            <NoteIconButton
+              note={data.note}
+              title={data.label}
               className="ml-1 text-[11px] leading-none opacity-80 hover:opacity-100"
-              onClick={(e) => { e.stopPropagation(); openNoteDrawer(id); }}
-              title="노트 보기"
-              aria-label="노트 있음"
-            >
-              📝
-            </button>
+              onOpen={() => openNoteDrawer(id)}
+            />
           )}
         </span>
         <div className="hidden group-hover:flex gap-1">
