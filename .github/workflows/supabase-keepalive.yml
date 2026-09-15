@@ -1,0 +1,23 @@
+name: Supabase keepalive
+
+# Supabase 무료 플랜은 약 7일간 요청이 없으면 프로젝트를 일시정지한다.
+# 3일마다 가벼운 조회를 한 번 보내 활동으로 잡히게 한다.
+# (RLS 때문에 결과는 빈 목록이어도 DB까지 요청이 들어가면 충분하다)
+#
+# 필요한 저장소 Secrets: SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY (sb_publishable_…, secret 키 금지)
+# ponytail: GitHub는 저장소에 60일간 커밋이 없으면 예약 실행을 멈춘다 — 그때 메일이 오면 다시 켤 것.
+
+on:
+  schedule:
+    - cron: '0 0 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase
+        run: |
+          curl -sf -o /dev/null \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/maps?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}"
