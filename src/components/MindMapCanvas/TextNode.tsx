@@ -7,7 +7,7 @@ import { hasNoteContent } from '../../utils/noteText';
 export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps<MindMapNode>) {
   const [label, setLabel] = useState(data.label);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { updateNodeLabel, toggleCollapse, openNoteDrawer, deleteNode, mindMapData, editingNodeId, setEditingNodeId } =
+  const { updateNodeLabel, toggleCollapse, openNoteDrawer, deleteNode, mindMapData, editingNodeId, setEditingNodeId, readOnly } =
     useMindMapStore();
 
   // 편집 상태는 스토어가 단일 출처: 더블클릭/F2/Tab·Enter(생성 직후) 모두 여기로 모인다.
@@ -49,7 +49,7 @@ export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps
         color: '#e2e8f0',
         minWidth: 120,
       }}
-      onDoubleClick={() => setEditingNodeId(id)}
+      onDoubleClick={() => !readOnly && setEditingNodeId(id)}
     >
       <Handle type="target" position={Position.Left} className="!opacity-0" />
 
@@ -94,13 +94,15 @@ export const TextNode = memo(function TextNode({ data, id, selected }: NodeProps
             📝
           </button>
         )}
-        <button
-          className="text-xs px-1.5 py-0.5 rounded bg-slate-600 text-white hover:bg-red-600 shadow"
-          onClick={(e) => { e.stopPropagation(); deleteNode(id); }}
-          title="삭제"
-        >
-          ✕
-        </button>
+        {!readOnly && (
+          <button
+            className="text-xs px-1.5 py-0.5 rounded bg-slate-600 text-white hover:bg-red-600 shadow"
+            onClick={(e) => { e.stopPropagation(); deleteNode(id); }}
+            title="삭제"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {hasChildren && (

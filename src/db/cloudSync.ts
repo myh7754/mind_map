@@ -44,7 +44,10 @@ export async function syncNow(): Promise<SyncResult | null> {
 
   const { data: rows, error } = await supabase
     .from(TABLE)
-    .select('id, owner_id, title, data, positions, updated_at, deleted_at');
+    .select('id, owner_id, title, data, positions, updated_at, deleted_at')
+    // RLS가 공개 계정의 맵도 읽게 해 주므로(schema.sql) 내 것만 고른다.
+    // 빠지면 다른 사용자의 동기화가 공개 계정 맵을 자기 로컬로 끌어내린다.
+    .eq('owner_id', userId);
   if (error) throw new Error(`클라우드 목록을 읽지 못했습니다: ${error.message}`);
 
   const remoteRows = (rows ?? []) as RemoteRow[];

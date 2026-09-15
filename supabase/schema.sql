@@ -44,3 +44,28 @@ drop policy if exists "본인 맵만 삭제" on public.maps;
 create policy "본인 맵만 삭제"
   on public.maps for delete
   using (auth.uid() = owner_id);
+
+-- ─────────────────────────────────────────────────────────────
+-- 공개 계정(포트폴리오): 여기 등록된 계정의 맵은 로그인 없이 누구나 "읽는다".
+-- 수정·삭제 정책은 위의 "본인만" 그대로라 쓰기는 여전히 본인만 된다.
+-- (같은 동작의 정책이 여럿이면 OR로 합쳐진다 — select만 넓어진다)
+--
+-- 등록: 본인 계정으로 앱에 한 번 로그인한 뒤 SQL Editor에서 실행
+--   insert into public.showcase_owners (owner_id)
+--   select id from auth.users where email = '본인 이메일';
+-- ─────────────────────────────────────────────────────────────
+create table if not exists public.showcase_owners (
+  owner_id uuid primary key references auth.users(id) on delete cascade
+);
+alter table public.showcase_owners enable row level security;
+
+-- 쓰기 정책은 일부러 없다 → 앱(publishable 키)으로는 아무도 스스로를 공개 계정으로 못 올린다
+drop policy if exists "공개 계정 목록은 누구나 조회" on public.showcase_owners;
+create policy "공개 계정 목록은 누구나 조회"
+  on public.showcase_owners for select
+  using (true);
+
+drop policy if exists "공개 계정 맵은 누구나 조회" on public.maps;
+create policy "공개 계정 맵은 누구나 조회"
+  on public.maps for select
+  using (owner_id in (select owner_id from public.showcase_owners));

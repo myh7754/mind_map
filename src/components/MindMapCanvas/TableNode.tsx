@@ -5,7 +5,7 @@ import { useMindMapStore } from '../../store/useMindMapStore';
 import { hasNoteContent } from '../../utils/noteText';
 
 export const TableNode = memo(function TableNode({ data, id, selected }: NodeProps<MindMapNode>) {
-  const { updateNodeTableData, openNoteDrawer, deleteNode } = useMindMapStore();
+  const { updateNodeTableData, openNoteDrawer, deleteNode, readOnly } = useMindMapStore();
   const tableData = data.tableData ?? { headers: ['컬럼 1', '컬럼 2'], rows: [['', '']] };
   const noted = hasNoteContent(data.note);
 
@@ -67,12 +67,14 @@ export const TableNode = memo(function TableNode({ data, id, selected }: NodePro
               📝
             </button>
           )}
-          <button
-            className="text-xs px-1 rounded bg-slate-600 text-white"
-            onClick={() => deleteNode(id)}
-          >
-            ✕
-          </button>
+          {!readOnly && (
+            <button
+              className="text-xs px-1 rounded bg-slate-600 text-white"
+              onClick={() => deleteNode(id)}
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
 
@@ -84,14 +86,17 @@ export const TableNode = memo(function TableNode({ data, id, selected }: NodePro
                 <input
                   className="bg-transparent text-slate-200 font-semibold w-full outline-none min-w-[60px]"
                   value={header}
+                  readOnly={readOnly}
                   onChange={(e) => updateHeader(ci, e.target.value)}
                 />
               </th>
             ))}
             <th className="border border-slate-700 p-1">
-              <button className="text-slate-500 hover:text-slate-300" onClick={addColumn}>
-                +
-              </button>
+              {!readOnly && (
+                <button className="text-slate-500 hover:text-slate-300" onClick={addColumn}>
+                  +
+                </button>
+              )}
             </th>
           </tr>
         </thead>
@@ -103,6 +108,7 @@ export const TableNode = memo(function TableNode({ data, id, selected }: NodePro
                   <input
                     className="bg-transparent text-slate-300 w-full outline-none min-w-[60px]"
                     value={cell}
+                    readOnly={readOnly}
                     onChange={(e) => updateCell(ri, ci, e.target.value)}
                   />
                 </td>
@@ -110,19 +116,21 @@ export const TableNode = memo(function TableNode({ data, id, selected }: NodePro
               <td className="border border-slate-700" />
             </tr>
           ))}
-          <tr>
-            <td
-              colSpan={tableData.headers.length + 1}
-              className="border border-slate-700 p-1 text-center"
-            >
-              <button
-                className="text-slate-500 hover:text-slate-300 text-xs"
-                onClick={addRow}
+          {!readOnly && (
+            <tr>
+              <td
+                colSpan={tableData.headers.length + 1}
+                className="border border-slate-700 p-1 text-center"
               >
-                + 행 추가
-              </button>
-            </td>
-          </tr>
+                <button
+                  className="text-slate-500 hover:text-slate-300 text-xs"
+                  onClick={addRow}
+                >
+                  + 행 추가
+                </button>
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
 

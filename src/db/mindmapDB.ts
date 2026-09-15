@@ -1,12 +1,23 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import type { MindMapData, MapSummary, PersistedState } from '../types';
 
-const DB_NAME = 'mindmap-db';
+const LEGACY_DB_NAME = 'mindmap-db';
 const STORE_NAME = 'maps';
 const DB_VERSION = 1;
+const LEGACY_CLAIMED_KEY = 'legacy-maps-claimed';
 
-async function getDB(): Promise<IDBPDatabase> {
-  return openDB(DB_NAME, DB_VERSION, {
+// 계정마다 저장소를 따로 쓴다. 하나를 같이 쓰면 한 브라우저에서 A가 로그아웃하고
+// B가 로그인했을 때 A의 맵이 B의 클라우드로 올라간다.
+// ponytail: 모듈 전역 — 한 탭에 로그인 사용자는 한 명뿐이라 충분하다.
+let dbName = LEGACY_DB_NAME;
+
+/** 로그인 사용자를 정한다. null이면 클라우드가 꺼진 로컬 전용 모드(예전 저장소 그대로). */
+export function setDbUser(userId: string | null): void {
+  dbName = userId ? `${LEGACY_DB_NAME}:${userId}` : LEGACY_DB_NAME;
+}
+
+async function getDB(name = dbName): Promise<IDBPDatabase> {
+  return openDB(name, DB_VERSION, {
     upgrade(db) {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' });
@@ -95,6 +106,23 @@ export async function listSyncEntries(): Promise<
     updatedAt: r.updatedAt ?? 0,
     ...(r.deletedAt ? { deletedAt: r.deletedAt } : {}),
   }));
+}
+
+/**
+ * 계정 분리 전(브라우저 하나 = 저장소 하나)에 만든 맵을 이 브라우저에서 처음 로그인한
+ * 계정으로 복사한다. 원본은 지우지 않는다 — 잘못 옮겨져도 되돌릴 수 있게.
+ * 한 번 옮기면 표시를 남겨, 나중에 다른 사람이 로그인해도 다시 가져가지 않는다.
+ */
+export async function claimLegacyMaps(): Promise<void> {
+  if (dbName === LEGACY_DB_NAME || localStorage.getItem(LEGACY_CLAIMED_KEY)) return;
+  const legacy = await getDB(LEGACY_DB_NAME);
+  const records = await legacy.getAll(STORE_NAME);
+  legacy.close();
+  const db = await getDB();
+  for (const r of records) {
+    if (!(await db.get(STORE_NAME, r.id))) await db.put(STORE_NAME, r);
+  }
+  localStorage.setItem(LEGACY_CLAIMED_KEY, '1');
 }
 
 /** 클라우드에서 받은 맵을 로컬에 그대로 기록한다 (updatedAt을 서버 값으로 유지) */

@@ -9,14 +9,13 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useMindMapStore, useUndoRedo } from './store/useMindMapStore';
 import { useAutosave } from './hooks/useAutosave';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
-import { useAuth } from './hooks/useAuth';
 import { syncNow } from './db/cloudSync';
-import { listMaps, loadMindMap } from './db/mindmapDB';
+import { claimLegacyMaps, listMaps, loadMindMap, setDbUser } from './db/mindmapDB';
 
 // 마지막으로 열어둔 맵. 새로고침해도 보던 과목으로 돌아온다.
 const LAST_MAP_KEY = 'last-map-id';
 
-export default function App() {
+export default function App({ userId }: { userId: string | null }) {
   // 선택자로 구독한다. 스토어 전체를 구독하면 저장 상태가 바뀔 때마다
   // App까지 다시 렌더된다.
   const mindMapData = useMindMapStore((s) => s.mindMapData);
@@ -37,8 +36,12 @@ export default function App() {
       if (!isNaN(parsed)) setNoteDrawerWidth(parsed);
     }
 
+    // 이 계정의 저장소를 연다. 계정 분리 전 맵이 있으면 처음 로그인한 계정으로 옮긴다.
+    setDbUser(userId);
+
     // 마지막에 보던 맵 → 없으면 가장 최근 수정한 맵 → 그것도 없으면 초기 데이터
-    listMaps()
+    claimLegacyMaps()
+      .then(listMaps)
       .then(async (maps) => {
         const lastId = localStorage.getItem(LAST_MAP_KEY);
         const target = maps.find((m) => m.id === lastId) ?? maps[0];
@@ -66,8 +69,6 @@ export default function App() {
   }, [mindMapData.id, ready]);
 
   // 로그인하면 한 번 맞춘다. 로컬에만 있던 맵이 올라가고, 다른 기기 것이 내려온다.
-  const { session } = useAuth();
-  const userId = session?.user.id ?? null;
   useEffect(() => {
     if (!ready || !userId) return;
     let cancelled = false;
