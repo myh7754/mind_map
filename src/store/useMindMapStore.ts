@@ -10,7 +10,9 @@ const ROOT_ID = 'root';
 const CHILD_ID = 'child-1';
 
 const initialMindMapData: MindMapData = {
-  id: 'default',
+  // 맵이 하나도 없는 사용자에게 처음 뜨는 맵. 고정 id('default')면 서버의 id가 전역 기본키라
+  // 먼저 올린 사람의 행과 부딪혀, 다른 사용자의 첫 맵은 업로드가 RLS에 막힌다.
+  id: nanoid(),
   title: '새 마인드맵',
   rootId: ROOT_ID,
   children: {
