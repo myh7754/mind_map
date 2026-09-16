@@ -8,7 +8,7 @@ import {
   SelectionMode,
   ViewportPortal,
   useReactFlow,
-  useStore,
+  useStoreApi,
   type NodeTypes,
   type EdgeTypes,
   type Node,
@@ -59,15 +59,19 @@ function Flow() {
     readOnly,
   } = useMindMapStore();
   const { getNodes, setCenter, getViewport, fitView } = useReactFlow();
-  // ReactFlow 내부 스토어가 들고 있는 캔버스(pane) 실제 픽셀 크기
-  const paneWidth = useStore((s) => s.width);
-  const paneHeight = useStore((s) => s.height);
+  // ReactFlow 내부 스토어. 캔버스(pane) 실제 픽셀 크기를 읽는 데 쓴다.
+  const rfStore = useStoreApi();
 
   // 키보드 탐색/검색이 요청한 노드로 화면을 따라가게 한다.
   // 방향키 탐색은 화면 밖으로 나갔을 때만 움직여야 덜 어지럽고,
   // 검색 결과 점프(center=true)는 항상 가운데로 데려간다.
+  //
+  // pane 크기는 의존성에 넣지 않고 실행 시점에 읽는다. 넣으면 크기가 바뀔 때마다
+  // 이미 처리한 요청이 다시 실행된다 — 노드 선택/해제로 툴바 색상 막대가 생겼다
+  // 사라지며 줄바꿈되면 캔버스 높이가 변해, 예전에 따라갔던 노드(주로 루트)로 화면이 튀었다.
   useEffect(() => {
     if (!focusRequest) return;
+    const { width: paneWidth, height: paneHeight } = rfStore.getState();
     const node = getNodes().find((n) => n.id === focusRequest.id);
     if (!node || node.hidden) return;
 
@@ -84,7 +88,7 @@ function Flow() {
 
     if (!focusRequest.center && visible) return;
     setCenter(node.position.x + w / 2, node.position.y + h / 2, { zoom, duration: 250 });
-  }, [focusRequest, getNodes, getViewport, setCenter, paneWidth, paneHeight]);
+  }, [focusRequest, getNodes, getViewport, setCenter, rfStore]);
 
   // 맵을 새로 열거나 전체 펼침/접힘 후 화면을 맵에 맞춘다.
   // 초기값 0은 건너뛴다 — ReactFlow의 fitView prop이 최초 1회를 이미 처리한다.
